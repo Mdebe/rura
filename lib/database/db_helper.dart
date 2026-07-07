@@ -86,6 +86,7 @@ class DBHelper {
         .toList();
     final db = await database;
     int imported = 0;
+    // ignore: unused_local_variable
     int skipped = 0;
 
     await db.transaction((txn) async {
