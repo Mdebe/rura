@@ -30,6 +30,7 @@ class SiteService {
       return localSite;
     } catch (e) {
       // If Firestore fails, it stays isSynced = false for retry later
+      // ignore: avoid_print
       print('Firestore sync failed: $e');
       return localSite; // Return unsynced site
     }
@@ -55,6 +56,7 @@ class SiteService {
           ),
         );
       } catch (e) {
+        // ignore: avoid_print
         print('Sync failed for site ${site.id}: $e');
       }
     }
@@ -83,6 +85,7 @@ class SiteService {
               .delete();
         }
       } catch (e) {
+        // ignore: avoid_print
         print('Firestore delete failed: $e');
       }
     }
