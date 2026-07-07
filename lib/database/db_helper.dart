@@ -38,7 +38,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 8, // Bumped to 8 for firestore_id + isSynced safety
+      version: 9, // Bumped to 9 for uid column in users
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -374,7 +374,7 @@ class DBHelper {
         if (bytes < 1024 * 1024) {
           return '${(bytes / 1024).toStringAsFixed(1)} KB';
         }
-        return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+        return '${(bytes / 1024).toStringAsFixed(1)} MB';
       }
       return '0 KB';
     } catch (e) {
@@ -625,6 +625,7 @@ class DBHelper {
 
     await db.execute('''
       CREATE TABLE users(
+        uid TEXT NOT NULL,
         name TEXT NOT NULL,
         email TEXT PRIMARY KEY NOT NULL,
         phone TEXT,
@@ -772,6 +773,15 @@ class DBHelper {
     // Version 8: Add firestore_id for Firebase sync
     if (oldVersion < 8) {
       await _addColumnIfNotExists(db, 'sites', 'firestore_id', 'TEXT');
+    }
+
+    // Version 9: Add uid to users table
+    if (oldVersion < 9) {
+      await _addColumnIfNotExists(db, 'users', 'uid', 'TEXT');
+      // Set default uid for existing users to their email as fallback
+      await db.execute(
+        "UPDATE users SET uid = email WHERE uid IS NULL OR uid = ''",
+      );
     }
   }
 
@@ -1032,6 +1042,7 @@ class DBHelper {
     if (userCount == 0) {
       await insertUser(
         AppUser(
+          uid: 'demo-admin',
           name: 'Admin User',
           email: 'admin@email.com',
           phone: '0000000000',

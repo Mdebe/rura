@@ -1,4 +1,5 @@
 class AppUser {
+  final String uid;
   final String name;
   final String email;
   final String phone;
@@ -7,6 +8,7 @@ class AppUser {
   final DateTime? lastLogin;
 
   const AppUser({
+    required this.uid,
     required this.name,
     required this.email,
     required this.phone,
@@ -16,6 +18,7 @@ class AppUser {
   });
 
   AppUser copyWith({
+    String? uid,
     String? name,
     String? email,
     String? phone,
@@ -24,6 +27,7 @@ class AppUser {
     DateTime? lastLogin,
   }) {
     return AppUser(
+      uid: uid ?? this.uid,
       name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,
@@ -35,6 +39,7 @@ class AppUser {
 
   Map<String, dynamic> toMap() {
     return {
+      'uid': uid,
       'name': name,
       'email': email,
       'phone': phone,
@@ -63,6 +68,7 @@ class AppUser {
 
   factory AppUser.fromMap(Map<String, dynamic> map) {
     return AppUser(
+      uid: _toString(map['uid']),
       name: _toString(map['name'], fallback: 'Enumerator'),
       email: _toString(map['email']),
       phone: _toString(map['phone']),

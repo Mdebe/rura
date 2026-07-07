@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ruralmap/screens/privacy_policy_screen.dart';
+import 'package:ruralmap/screens/terms_screen.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import 'register_screen.dart';
@@ -40,14 +42,68 @@ class _LoginScreenState extends State<LoginScreen> {
       password: _passwordController.text,
     );
 
-    if (error == null) {
-      // AuthGate handles navigation
-    } else if (mounted) {
-      setState(() {
-        _loading = false;
-        _errorMessage = error;
-      });
+    if (error != null) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _errorMessage = error;
+        });
+      }
+      return;
     }
+
+    // Login success - check terms acceptance
+    if (!mounted) return;
+
+    if (!auth.hasAcceptedTerms) {
+      final accepted = await _showTermsDialog();
+      if (!accepted) {
+        await auth.logout();
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      await auth.acceptTerms();
+    }
+
+    // AuthGate handles navigation - just stop loading
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<bool> _showTermsDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Terms and Privacy'),
+            content: const Text(
+              'By using GeoRura you agree to our Terms and Conditions and Privacy Policy. '
+              'We collect location and household data for municipal planning only.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.push(
+                  ctx,
+                  MaterialPageRoute(builder: (_) => const TermsScreen()),
+                ),
+                child: const Text('View Terms'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.push(
+                  ctx,
+                  MaterialPageRoute(
+                    builder: (_) => const PrivacyPolicyScreen(),
+                  ),
+                ),
+                child: const Text('View Privacy'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Accept'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -132,6 +188,61 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    // Terms notice
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      children: [
+                        Text(
+                          'By signing in you agree to our ',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const TermsScreen(),
+                            ),
+                          ),
+                          child: Text(
+                            'Terms',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          ' and ',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PrivacyPolicyScreen(),
+                            ),
+                          ),
+                          child: Text(
+                            'Privacy Policy',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 24),
                     FilledButton(
                       onPressed: _loading ? null : _login,

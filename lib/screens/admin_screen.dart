@@ -194,27 +194,36 @@ class _AdminScreenState extends State<AdminScreen>
                       });
 
                       try {
-                        if (!isEdit) {
-                          // Create Firebase Auth user
-                          await FirebaseAuth.instance
+                        if (isEdit) {
+                          // Update existing user - keep same UID
+                          final updatedUser = user.copyWith(
+                            name: nameCtrl.text.trim(),
+                            phone: phoneCtrl.text.trim(),
+                            role: role,
+                          );
+                          await DBHelper.instance.updateUser(updatedUser);
+                        } else {
+                          // Create Firebase Auth user first to get UID
+                          final cred = await FirebaseAuth.instance
                               .createUserWithEmailAndPassword(
                                 email: emailCtrl.text.trim(),
                                 password: passwordCtrl.text,
                               );
-                        }
 
-                        final newUser = AppUser(
-                          name: nameCtrl.text.trim(),
-                          email: emailCtrl.text.trim(),
-                          phone: phoneCtrl.text.trim(),
-                          role: role,
-                          createdAt: user?.createdAt ?? DateTime.now(),
-                          lastLogin: user?.lastLogin,
-                        );
+                          await cred.user?.updateDisplayName(
+                            nameCtrl.text.trim(),
+                          );
 
-                        if (isEdit) {
-                          await DBHelper.instance.updateUser(newUser);
-                        } else {
+                          final newUser = AppUser(
+                            uid: cred.user!.uid, // ✅ Use Firebase UID
+                            name: nameCtrl.text.trim(),
+                            email: emailCtrl.text.trim(),
+                            phone: phoneCtrl.text.trim(),
+                            role: role,
+                            createdAt: DateTime.now(),
+                            lastLogin: null,
+                          );
+
                           await DBHelper.instance.insertUser(newUser);
                         }
 

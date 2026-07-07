@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 import '../models/user.dart';
 
@@ -13,18 +14,34 @@ class AuthProvider with ChangeNotifier {
   AppUser? _currentUser;
   User? _firebaseUser;
   bool _isLoaded = false;
+  bool _hasAcceptedTerms = false;
 
   AppUser? get currentUser => _currentUser;
   User? get firebaseUser => _firebaseUser;
   bool get isAuthenticated => _currentUser != null;
   bool get isLoaded => _isLoaded;
   bool get isAdmin => _currentUser?.role == 'Admin';
+  bool get hasAcceptedTerms => _hasAcceptedTerms;
 
   AuthProvider() {
     _firebaseAuth.authStateChanges().listen(_onAuthStateChanged);
   }
 
+  Future<void> loadTermsStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    _hasAcceptedTerms = prefs.getBool('accepted_terms_v1') ?? false;
+    notifyListeners();
+  }
+
+  Future<void> acceptTerms() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('accepted_terms_v1', true);
+    _hasAcceptedTerms = true;
+    notifyListeners();
+  }
+
   Future<void> checkAuthStatus() async {
+    await loadTermsStatus();
     _firebaseUser = _firebaseAuth.currentUser;
     if (_firebaseUser != null) {
       try {
@@ -38,10 +55,21 @@ class AuthProvider with ChangeNotifier {
           _currentUser = await DBHelper.instance.getUserByEmail(
             _firebaseUser!.email!,
           );
+          if (_currentUser != null) {
+            final updated = _currentUser!.copyWith(uid: _firebaseUser!.uid);
+            await _firestore
+                .collection('users')
+                .doc(_firebaseUser!.uid)
+                .set(updated.toMap());
+            await DBHelper.instance.updateUser(updated);
+            _currentUser = updated;
+          }
         }
       } catch (e) {
         debugPrint('Failed to load user: $e');
-        _currentUser = null;
+        _currentUser = await DBHelper.instance.getUserByEmail(
+          _firebaseUser!.email!,
+        );
       }
     }
     _isLoaded = true;
@@ -59,26 +87,33 @@ class AuthProvider with ChangeNotifier {
           _currentUser = AppUser.fromMap(doc.data()!);
           final now = DateTime.now();
           await docRef.update({'lastLogin': now.toIso8601String()});
-          await DBHelper.instance.updateUser(
-            _currentUser!.copyWith(lastLogin: now),
-          );
           _currentUser = _currentUser!.copyWith(lastLogin: now);
+          await DBHelper.instance.updateUser(_currentUser!);
         } else {
           _currentUser = await DBHelper.instance.getUserByEmail(
             firebaseUser.email!,
           );
           if (_currentUser != null) {
-            await docRef.set(_currentUser!.toMap());
+            final userWithUid = _currentUser!.copyWith(uid: firebaseUser.uid);
+            await docRef.set(userWithUid.toMap());
+            await DBHelper.instance.updateUser(userWithUid);
+            _currentUser = userWithUid;
+          } else {
+            await _firebaseAuth.signOut();
+            _currentUser = null;
           }
         }
       } catch (e) {
         debugPrint('Error syncing user: $e');
-        _currentUser = null;
+        _currentUser = await DBHelper.instance.getUserByEmail(
+          firebaseUser.email!,
+        );
       }
     } else {
       _currentUser = null;
     }
-    if (_isLoaded) notifyListeners();
+    _isLoaded = true;
+    notifyListeners();
   }
 
   Future<String?> login({
@@ -91,31 +126,36 @@ class AuthProvider with ChangeNotifier {
         password: password,
       );
 
-      final docRef = _firestore.collection('users').doc(cred.user!.uid);
+      final uid = cred.user!.uid;
+      final docRef = _firestore.collection('users').doc(uid);
       final doc = await docRef.get();
-
-      AppUser localUser;
       final now = DateTime.now();
 
       if (!doc.exists) {
-        localUser = AppUser(
-          name: cred.user?.displayName ?? 'User',
-          email: email.trim(),
-          phone: '',
-          role: 'Enumerator',
-          createdAt: now,
-          lastLogin: now,
-        );
+        final localUser = await DBHelper.instance.getUserByEmail(email.trim());
+        final user =
+            (localUser ??
+                    AppUser(
+                      uid: uid,
+                      name: cred.user?.displayName ?? 'User',
+                      email: email.trim(),
+                      phone: '',
+                      role: 'Enumerator',
+                      createdAt: now,
+                      lastLogin: now,
+                    ))
+                .copyWith(uid: uid, lastLogin: now);
 
-        await docRef.set(localUser.toMap());
-        await DBHelper.instance.insertUser(localUser);
+        await docRef.set(user.toMap());
+        await DBHelper.instance.insertUser(user);
+        _currentUser = user;
       } else {
-        localUser = AppUser.fromMap(doc.data()!);
+        _currentUser = AppUser.fromMap(doc.data()!);
         await docRef.update({'lastLogin': now.toIso8601String()});
-        localUser = localUser.copyWith(lastLogin: now);
+        _currentUser = _currentUser!.copyWith(lastLogin: now);
+        await DBHelper.instance.updateUser(_currentUser!);
       }
 
-      _currentUser = localUser;
       notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
@@ -140,9 +180,11 @@ class AuthProvider with ChangeNotifier {
       );
 
       await cred.user?.updateDisplayName(name.trim());
-
+      final uid = cred.user!.uid;
       final now = DateTime.now();
+
       final user = AppUser(
+        uid: uid,
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
@@ -151,10 +193,7 @@ class AuthProvider with ChangeNotifier {
         lastLogin: now,
       );
 
-      await _firestore
-          .collection('users')
-          .doc(cred.user!.uid)
-          .set(user.toMap());
+      await _firestore.collection('users').doc(uid).set(user.toMap());
       await DBHelper.instance.insertUser(user);
       await _firebaseAuth.signOut();
 
@@ -175,11 +214,13 @@ class AuthProvider with ChangeNotifier {
   Future<bool> authenticateWithBiometrics() async {
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
-      if (!canCheck) return false;
+      final isDeviceSupported = await _localAuth.isDeviceSupported();
+      if (!canCheck || !isDeviceSupported) return false;
+
       return await _localAuth.authenticate(
-        localizedReason: 'Please authenticate',
+        localizedReason: 'Please authenticate to access your account',
         options: const AuthenticationOptions(
-          biometricOnly: true,
+          biometricOnly: false,
           stickyAuth: true,
         ),
       );
@@ -252,12 +293,19 @@ class AuthProvider with ChangeNotifier {
       );
       await _firebaseUser!.reauthenticateWithCredential(cred);
 
-      await _firestore.collection('users').doc(_firebaseUser!.uid).delete();
-      await DBHelper.instance.deleteUser(_currentUser!.email);
+      final uid = _firebaseUser!.uid;
+      final email = _currentUser!.email;
+
+      await _firestore.collection('users').doc(uid).delete();
+      await DBHelper.instance.deleteUser(email);
       await _firebaseUser!.delete();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('accepted_terms_v1');
 
       _currentUser = null;
       _firebaseUser = null;
+      _hasAcceptedTerms = false;
       notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
@@ -285,6 +333,8 @@ class AuthProvider with ChangeNotifier {
         return 'Too many attempts. Try again later';
       case 'requires-recent-login':
         return 'Please log out and log in again';
+      case 'user-disabled':
+        return 'This account has been disabled';
       default:
         return e.message ?? 'Authentication failed';
     }
