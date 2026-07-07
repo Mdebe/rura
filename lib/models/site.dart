@@ -217,7 +217,7 @@ class Site {
       'pensioners': pensioners,
       'chronic_members': chronicMembers,
       'phone_number': phoneNumber,
-      'services': services != null ? jsonEncode(services) : null,
+
       'notes': notes,
       'site_code': siteCode,
       'province': province,
@@ -263,7 +263,7 @@ class Site {
       'pensioners': pensioners,
       'chronicMembers': chronicMembers,
       'phoneNumber': phoneNumber,
-      'services': services,
+
       'notes': notes,
       'imagePath': imagePath,
       'imagePaths': imagePaths,

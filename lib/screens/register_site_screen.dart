@@ -9,7 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
-import '../services/site_service.dart'; // Added
+import '../services/site_service.dart';
 import '../theme/app_theme.dart';
 
 import '../wizard_steps/site_type_step.dart';
@@ -17,39 +17,7 @@ import '../wizard_steps/gps_capture_step.dart';
 import '../wizard_steps/photo_capture_step.dart';
 import '../wizard_steps/site_info_step.dart';
 import '../wizard_steps/household_info_step.dart';
-import '../wizard_steps/services_step.dart';
 import '../wizard_steps/review_step.dart';
-
-/// Service availability with quality rating
-class ServiceAvailability {
-  final String name;
-  final bool available;
-  final int? quality; // 1-5 rating when available
-
-  const ServiceAvailability({
-    required this.name,
-    required this.available,
-    this.quality,
-  });
-
-  ServiceAvailability copyWith({bool? available, int? quality}) {
-    return ServiceAvailability(
-      name: name,
-      available: available ?? this.available,
-      quality: quality,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {'name': name, 'quality': quality};
-
-  factory ServiceAvailability.fromJson(Map<String, dynamic> json) {
-    return ServiceAvailability(
-      name: json['name'],
-      available: true,
-      quality: json['quality'],
-    );
-  }
-}
 
 /// Wizard shell for registering a new site. Owns all shared state
 /// (controllers, GPS/photo results, current step) and delegates rendering
@@ -62,11 +30,11 @@ class RegisterSiteScreen extends StatefulWidget {
 }
 
 class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
-  static const int _stepCount = 7;
+  static const int _stepCount = 6; // Removed services step
   static const int _maxPhotos = 5;
 
   final _formKey = GlobalKey<FormState>();
-  final _siteService = SiteService(); // Added
+  final _siteService = SiteService();
 
   // Site Info Controllers
   final _nameController = TextEditingController();
@@ -94,10 +62,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   final _adultsController = TextEditingController();
   final _pensionersController = TextEditingController();
   final _chronicController = TextEditingController();
-
-  // Services
   final _notesController = TextEditingController();
-  List<ServiceAvailability> _services = [];
 
   // State
   SiteType _selectedType = SiteType.house;
@@ -124,7 +89,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   void initState() {
     super.initState();
     _provinceController.text = 'KwaZulu-Natal';
-    _initServices();
     _loadNextSiteId();
     // Default demographic counts to 0
     _malesController.text = '0';
@@ -133,29 +97,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     _adultsController.text = '0';
     _pensionersController.text = '0';
     _chronicController.text = '0';
-  }
-
-  void _initServices() {
-    final allServiceNames = [
-      'Water',
-      'Electricity',
-      'Sanitation',
-      'Waste Collection',
-      'Cellphone Network',
-      'Internet/Fiber',
-      'Postal Service',
-      'Tarred Road',
-      'Public Transport',
-      'Street Lights',
-      'School',
-      'Clinic',
-      'Police Station',
-      'Community Hall',
-    ];
-
-    _services = allServiceNames
-        .map((name) => ServiceAvailability(name: name, available: false))
-        .toList();
   }
 
   Future<void> _loadNextSiteId() async {
@@ -374,28 +315,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     }
   }
 
-  void _toggleService(String service) {
-    setState(() {
-      final idx = _services.indexWhere((s) => s.name == service);
-      if (idx >= 0) {
-        final current = _services[idx];
-        _services[idx] = current.copyWith(
-          available: !current.available,
-          quality: !current.available ? current.quality : null,
-        );
-      }
-    });
-  }
-
-  void _rateService(String service, int rating) {
-    setState(() {
-      final idx = _services.indexWhere((s) => s.name == service);
-      if (idx >= 0) {
-        _services[idx] = _services[idx].copyWith(quality: rating);
-      }
-    });
-  }
-
   // ---------------------------------------------------------------------
   // Navigation / validation
   // ---------------------------------------------------------------------
@@ -558,10 +477,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       phoneNumber: _phoneController.text.trim().isEmpty
           ? null
           : _phoneController.text.trim(),
-      services: _services
-          .where((s) => s.available)
-          .map((s) => s.toJson())
-          .toList(),
+      services: null, // No services step
       notes: _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim(),
@@ -760,7 +676,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           pensionersController: _pensionersController,
           chronicController: _chronicController,
         );
-
       default:
         return ReviewStep(
           selectedType: _selectedType,
@@ -771,7 +686,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           householdHead: _householdHeadController.text.trim(),
           householdSize: int.tryParse(_householdSizeController.text.trim()),
           phoneNumber: _phoneController.text.trim(),
-          services: _services,
+          // Empty - no services
           photoPaths: _photoPaths,
           siteCode: _siteCodeController.text,
           latitude: _latitude,
