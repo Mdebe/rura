@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// The category of a registered site. Mirrors the "By Site Type" section
@@ -36,21 +37,28 @@ class Site {
   final String village;
   final SiteType type;
   final DateTime registeredAt;
-  final String? imagePath;
+  final String? imagePath; // First/primary image
+  final List<String>? imagePaths; // NEW: All photos
   final double? latitude;
   final double? longitude;
+  final double? accuracy; // NEW: GPS accuracy in meters
+  final double? altitude; // NEW: Altitude in meters
+  final DateTime? capturedAt; // NEW: When GPS was captured
   final String? address;
   final String? landmark;
   final String? description;
   final String? householdHead;
   final int? householdSize;
-  // New demographic fields
+  // Demographic fields
   final int? males;
   final int? females;
+  final int? children; // NEW: Under 18
+  final int? adults; // NEW: 18-64
   final int? pensioners;
   final int? chronicMembers;
   final String? phoneNumber;
-  final String? services;
+  final List<Map<String, dynamic>>?
+  services; // UPDATED: Now stores [{name, quality}]
   final String? notes;
   final String siteCode;
   final String province;
@@ -78,22 +86,28 @@ class Site {
     required this.type,
     required this.registeredAt,
     this.imagePath,
+    this.imagePaths,
     this.latitude,
     this.longitude,
+    this.accuracy,
+    this.altitude,
+    this.capturedAt,
     this.address,
     this.landmark,
-    this.distanceFromLandmark,
-    required this.directions,
     this.description,
     this.householdHead,
     this.householdSize,
     this.males,
     this.females,
+    this.children,
+    this.adults,
     this.pensioners,
     this.chronicMembers,
     this.phoneNumber,
     this.services,
     this.notes,
+    this.distanceFromLandmark,
+    required this.directions,
   });
 
   Site copyWith({
@@ -105,8 +119,12 @@ class Site {
     SiteType? type,
     DateTime? registeredAt,
     String? imagePath,
+    List<String>? imagePaths,
     double? latitude,
     double? longitude,
+    double? accuracy,
+    double? altitude,
+    DateTime? capturedAt,
     String? address,
     String? landmark,
     String? description,
@@ -114,10 +132,12 @@ class Site {
     int? householdSize,
     int? males,
     int? females,
+    int? children,
+    int? adults,
     int? pensioners,
     int? chronicMembers,
     String? phoneNumber,
-    String? services,
+    List<Map<String, dynamic>>? services,
     String? notes,
     String? siteCode,
     String? province,
@@ -130,37 +150,43 @@ class Site {
     double? distanceFromLandmark,
   }) {
     return Site(
-      id: id?? this.id,
-      firestoreId: firestoreId?? this.firestoreId,
-      isSynced: isSynced?? this.isSynced,
-      siteCode: siteCode?? this.siteCode,
-      name: name?? this.name,
-      province: province?? this.province,
-      district: district?? this.district,
-      municipality: municipality?? this.municipality,
-      ward: ward?? this.ward,
-      traditionalAuthority: traditionalAuthority?? this.traditionalAuthority,
-      village: village?? this.village,
-      section: section?? this.section,
-      type: type?? this.type,
-      registeredAt: registeredAt?? this.registeredAt,
-      imagePath: imagePath?? this.imagePath,
-      latitude: latitude?? this.latitude,
-      longitude: longitude?? this.longitude,
-      address: address?? this.address,
-      landmark: landmark?? this.landmark,
-      distanceFromLandmark: distanceFromLandmark?? this.distanceFromLandmark,
-      directions: directions?? this.directions,
-      description: description?? this.description,
-      householdHead: householdHead?? this.householdHead,
-      householdSize: householdSize?? this.householdSize,
-      males: males?? this.males,
-      females: females?? this.females,
-      pensioners: pensioners?? this.pensioners,
-      chronicMembers: chronicMembers?? this.chronicMembers,
-      phoneNumber: phoneNumber?? this.phoneNumber,
-      services: services?? this.services,
-      notes: notes?? this.notes,
+      id: id ?? this.id,
+      firestoreId: firestoreId ?? this.firestoreId,
+      isSynced: isSynced ?? this.isSynced,
+      siteCode: siteCode ?? this.siteCode,
+      name: name ?? this.name,
+      province: province ?? this.province,
+      district: district ?? this.district,
+      municipality: municipality ?? this.municipality,
+      ward: ward ?? this.ward,
+      traditionalAuthority: traditionalAuthority ?? this.traditionalAuthority,
+      village: village ?? this.village,
+      section: section ?? this.section,
+      type: type ?? this.type,
+      registeredAt: registeredAt ?? this.registeredAt,
+      imagePath: imagePath ?? this.imagePath,
+      imagePaths: imagePaths ?? this.imagePaths,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      accuracy: accuracy ?? this.accuracy,
+      altitude: altitude ?? this.altitude,
+      capturedAt: capturedAt ?? this.capturedAt,
+      address: address ?? this.address,
+      landmark: landmark ?? this.landmark,
+      distanceFromLandmark: distanceFromLandmark ?? this.distanceFromLandmark,
+      directions: directions ?? this.directions,
+      description: description ?? this.description,
+      householdHead: householdHead ?? this.householdHead,
+      householdSize: householdSize ?? this.householdSize,
+      males: males ?? this.males,
+      females: females ?? this.females,
+      children: children ?? this.children,
+      adults: adults ?? this.adults,
+      pensioners: pensioners ?? this.pensioners,
+      chronicMembers: chronicMembers ?? this.chronicMembers,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      services: services ?? this.services,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -168,14 +194,18 @@ class Site {
     return {
       'id': id,
       'firestore_id': firestoreId,
-      'isSynced': isSynced? 1 : 0,
+      'isSynced': isSynced ? 1 : 0,
       'name': name,
       'village': village,
       'type': type.name,
       'registered_at': registeredAt.toIso8601String(),
       'image_path': imagePath,
+      'image_paths': imagePaths != null ? jsonEncode(imagePaths) : null,
       'latitude': latitude,
       'longitude': longitude,
+      'accuracy': accuracy,
+      'altitude': altitude,
+      'captured_at': capturedAt?.toIso8601String(),
       'address': address,
       'landmark': landmark,
       'description': description,
@@ -183,10 +213,12 @@ class Site {
       'household_size': householdSize,
       'males': males,
       'females': females,
+      'children': children,
+      'adults': adults,
       'pensioners': pensioners,
       'chronic_members': chronicMembers,
       'phone_number': phoneNumber,
-      'services': services,
+      'services': services != null ? jsonEncode(services) : null,
       'notes': notes,
       'site_code': siteCode,
       'province': province,
@@ -216,6 +248,9 @@ class Site {
       'directions': directions,
       'latitude': latitude,
       'longitude': longitude,
+      'accuracy': accuracy,
+      'altitude': altitude,
+      'capturedAt': capturedAt != null ? Timestamp.fromDate(capturedAt!) : null,
       'address': address,
       'landmark': landmark,
       'distanceFromLandmark': distanceFromLandmark,
@@ -224,12 +259,15 @@ class Site {
       'householdSize': householdSize,
       'males': males,
       'females': females,
+      'children': children,
+      'adults': adults,
       'pensioners': pensioners,
       'chronicMembers': chronicMembers,
       'phoneNumber': phoneNumber,
       'services': services,
       'notes': notes,
       'imagePath': imagePath,
+      'imagePaths': imagePaths,
     };
   }
 
@@ -242,7 +280,7 @@ class Site {
   static DateTime _toDateTime(dynamic value) {
     if (value is DateTime) return value;
     if (value is String) {
-      return DateTime.tryParse(value)?? DateTime.now();
+      return DateTime.tryParse(value) ?? DateTime.now();
     }
     if (value is int) {
       return DateTime.fromMillisecondsSinceEpoch(value);
@@ -274,18 +312,60 @@ class Site {
     return SiteType.house;
   }
 
+  static List<String>? _toStringList(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString()).toList();
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is List) {
+      return value.map((e) => e.toString()).toList();
+    }
+    return null;
+  }
+
+  static List<Map<String, dynamic>>? _toServiceList(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is List) {
+      return value.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return null;
+  }
+
   factory Site.fromMap(Map<String, dynamic> map) {
     return Site(
       id: _toInt(map['id']),
       firestoreId: _toString(map['firestore_id']),
-      isSynced: (_toInt(map['isSynced'])?? 0) == 1,
-      name: _toString(map['name'])?? '',
-      village: _toString(map['village'])?? '',
+      isSynced: (_toInt(map['isSynced']) ?? 0) == 1,
+      name: _toString(map['name']) ?? '',
+      village: _toString(map['village']) ?? '',
       type: _toSiteType(map['type']),
       registeredAt: _toDateTime(map['registered_at']),
       imagePath: _toString(map['image_path']),
+      imagePaths: _toStringList(map['image_paths']),
       latitude: _toDouble(map['latitude']),
       longitude: _toDouble(map['longitude']),
+      accuracy: _toDouble(map['accuracy']),
+      altitude: _toDouble(map['altitude']),
+      capturedAt: map['captured_at'] != null
+          ? _toDateTime(map['captured_at'])
+          : null,
       address: _toString(map['address']),
       landmark: _toString(map['landmark']),
       description: _toString(map['description']),
@@ -293,19 +373,21 @@ class Site {
       householdSize: _toInt(map['household_size']),
       males: _toInt(map['males']),
       females: _toInt(map['females']),
+      children: _toInt(map['children']),
+      adults: _toInt(map['adults']),
       pensioners: _toInt(map['pensioners']),
       chronicMembers: _toInt(map['chronic_members']),
       phoneNumber: _toString(map['phone_number']),
-      services: _toString(map['services']),
+      services: _toServiceList(map['services']),
       notes: _toString(map['notes']),
-      siteCode: _toString(map['site_code'])?? '',
-      province: _toString(map['province'])?? '',
-      district: _toString(map['district'])?? '',
-      municipality: _toString(map['municipality'])?? '',
-      ward: _toString(map['ward'])?? '',
-      traditionalAuthority: _toString(map['traditional_authority'])?? '',
-      section: _toString(map['section'])?? '',
-      directions: _toString(map['directions'])?? '',
+      siteCode: _toString(map['site_code']) ?? '',
+      province: _toString(map['province']) ?? '',
+      district: _toString(map['district']) ?? '',
+      municipality: _toString(map['municipality']) ?? '',
+      ward: _toString(map['ward']) ?? '',
+      traditionalAuthority: _toString(map['traditional_authority']) ?? '',
+      section: _toString(map['section']) ?? '',
+      directions: _toString(map['directions']) ?? '',
       distanceFromLandmark: _toDouble(map['distance_from_landmark']),
     );
   }
@@ -316,14 +398,22 @@ class Site {
       id: null,
       firestoreId: doc.id,
       isSynced: true,
-      siteCode: data['siteCode']?? '',
-      name: data['name']?? '',
-      village: data['village']?? '',
+      siteCode: data['siteCode'] ?? '',
+      name: data['name'] ?? '',
+      village: data['village'] ?? '',
       type: _toSiteType(data['type']),
       registeredAt: (data['registeredAt'] as Timestamp).toDate(),
       imagePath: data['imagePath'],
+      imagePaths: (data['imagePaths'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
       latitude: _toDouble(data['latitude']),
       longitude: _toDouble(data['longitude']),
+      accuracy: _toDouble(data['accuracy']),
+      altitude: _toDouble(data['altitude']),
+      capturedAt: data['capturedAt'] != null
+          ? (data['capturedAt'] as Timestamp).toDate()
+          : null,
       address: data['address'],
       landmark: data['landmark'],
       description: data['description'],
@@ -331,18 +421,22 @@ class Site {
       householdSize: _toInt(data['householdSize']),
       males: _toInt(data['males']),
       females: _toInt(data['females']),
+      children: _toInt(data['children']),
+      adults: _toInt(data['adults']),
       pensioners: _toInt(data['pensioners']),
       chronicMembers: _toInt(data['chronicMembers']),
       phoneNumber: data['phoneNumber'],
-      services: data['services'],
+      services: data['services'] != null
+          ? List<Map<String, dynamic>>.from(data['services'])
+          : null,
       notes: data['notes'],
-      province: data['province']?? '',
-      district: data['district']?? '',
-      municipality: data['municipality']?? '',
-      ward: data['ward']?? '',
-      traditionalAuthority: data['traditionalAuthority']?? '',
-      section: data['section']?? '',
-      directions: data['directions']?? '',
+      province: data['province'] ?? '',
+      district: data['district'] ?? '',
+      municipality: data['municipality'] ?? '',
+      ward: data['ward'] ?? '',
+      traditionalAuthority: data['traditionalAuthority'] ?? '',
+      section: data['section'] ?? '',
+      directions: data['directions'] ?? '',
       distanceFromLandmark: _toDouble(data['distanceFromLandmark']),
     );
   }
@@ -367,11 +461,11 @@ class DashboardStats {
   });
 
   factory DashboardStats.empty() => const DashboardStats(
-        totalSites: 0,
-        registeredToday: 0,
-        registeredThisWeek: 0,
-        villageCount: 0,
-        countsByType: {},
-        countsByVillage: {},
-      );
+    totalSites: 0,
+    registeredToday: 0,
+    registeredThisWeek: 0,
+    villageCount: 0,
+    countsByType: {},
+    countsByVillage: {},
+  );
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart';
@@ -37,7 +38,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -110,13 +111,51 @@ class DBHelper {
             continue;
           }
 
+          // Parse image_paths JSON array
+          List<String>? imagePaths;
+          final imagePathsStr =
+              map['image_paths']?.toString().trim() ??
+              map['imagepaths']?.toString().trim();
+          if (imagePathsStr != null && imagePathsStr.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(imagePathsStr);
+              if (decoded is List) {
+                imagePaths = decoded.map((e) => e.toString()).toList();
+              }
+            } catch (_) {
+              // If not JSON, treat as single path
+              imagePaths = [imagePathsStr];
+            }
+          }
+
+          // Parse services JSON array [{name, quality}]
+          List<Map<String, dynamic>>? services;
+          final servicesStr = map['services']?.toString().trim();
+          if (servicesStr != null && servicesStr.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(servicesStr);
+              if (decoded is List) {
+                services = decoded
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList();
+              }
+            } catch (_) {
+              // Fallback: old comma-separated format
+              services = servicesStr
+                  .split(',')
+                  .map((s) => {'name': s.trim(), 'quality': null})
+                  .where((s) => s['name']!.isNotEmpty)
+                  .toList();
+            }
+          }
+
           final site = Site(
             name: name,
             siteCode:
                 map['sitecode']?.toString().trim() ??
                 map['site_code']?.toString().trim() ??
                 '',
-            type: SiteTypeX.fromString(map['type']?.toString() ?? 'household'),
+            type: SiteTypeX.fromString(map['type']?.toString() ?? 'house'),
             village: village,
             section: map['section']?.toString().trim() ?? '',
             traditionalAuthority:
@@ -137,6 +176,8 @@ class DBHelper {
             ),
             males: int.tryParse(map['males']?.toString() ?? ''),
             females: int.tryParse(map['females']?.toString() ?? ''),
+            children: int.tryParse(map['children']?.toString() ?? ''),
+            adults: int.tryParse(map['adults']?.toString() ?? ''),
             pensioners: int.tryParse(map['pensioners']?.toString() ?? ''),
             chronicMembers: int.tryParse(
               map['chronicmembers']?.toString() ??
@@ -156,12 +197,18 @@ class DBHelper {
             directions: map['directions']?.toString().trim() ?? '',
             latitude: double.tryParse(map['latitude']?.toString() ?? ''),
             longitude: double.tryParse(map['longitude']?.toString() ?? ''),
+            accuracy: double.tryParse(map['accuracy']?.toString() ?? ''),
+            altitude: double.tryParse(map['altitude']?.toString() ?? ''),
+            capturedAt: map['captured_at']?.toString() != null
+                ? DateTime.tryParse(map['captured_at'].toString())
+                : null,
             description: map['description']?.toString().trim(),
-            services: map['services']?.toString().trim(),
+            services: services,
             notes: map['notes']?.toString().trim(),
             imagePath:
                 map['imagepath']?.toString().trim() ??
                 map['image_path']?.toString().trim(),
+            imagePaths: imagePaths,
             registeredAt:
                 DateTime.tryParse(
                   map['registeredat']?.toString() ??
@@ -186,7 +233,6 @@ class DBHelper {
 
     return imported;
   }
-
   // ---------------------------------------------------------------------------
   // SYNC HELPER - Mark as unsynced on local changes
   // ---------------------------------------------------------------------------
@@ -362,6 +408,8 @@ class DBHelper {
       'household_size',
       'males',
       'females',
+      'children',
+      'adults',
       'pensioners',
       'chronic_members',
       'phone_number',
@@ -371,10 +419,14 @@ class DBHelper {
       'directions',
       'latitude',
       'longitude',
+      'accuracy',
+      'altitude',
+      'captured_at',
       'description',
       'services',
       'notes',
       'image_path',
+      'image_paths',
     ];
     sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
@@ -396,6 +448,8 @@ class DBHelper {
         TextCellValue(s.householdSize?.toString() ?? ''),
         TextCellValue(s.males?.toString() ?? ''),
         TextCellValue(s.females?.toString() ?? ''),
+        TextCellValue(s.children?.toString() ?? ''),
+        TextCellValue(s.adults?.toString() ?? ''),
         TextCellValue(s.pensioners?.toString() ?? ''),
         TextCellValue(s.chronicMembers?.toString() ?? ''),
         TextCellValue(s.phoneNumber ?? ''),
@@ -405,10 +459,14 @@ class DBHelper {
         TextCellValue(s.directions),
         TextCellValue(s.latitude?.toString() ?? ''),
         TextCellValue(s.longitude?.toString() ?? ''),
+        TextCellValue(s.accuracy?.toString() ?? ''),
+        TextCellValue(s.altitude?.toString() ?? ''),
+        TextCellValue(s.capturedAt?.toIso8601String() ?? ''),
         TextCellValue(s.description ?? ''),
-        TextCellValue(s.services ?? ''),
+        TextCellValue(s.services != null ? jsonEncode(s.services) : ''),
         TextCellValue(s.notes ?? ''),
         TextCellValue(s.imagePath ?? ''),
+        TextCellValue(s.imagePaths != null ? jsonEncode(s.imagePaths) : ''),
       ]);
     }
 
@@ -446,6 +504,8 @@ class DBHelper {
       'household_size',
       'males',
       'females',
+      'children',
+      'adults',
       'pensioners',
       'chronic_members',
       'phone_number',
@@ -455,10 +515,14 @@ class DBHelper {
       'directions',
       'latitude',
       'longitude',
+      'accuracy',
+      'altitude',
+      'captured_at',
       'description',
       'services',
       'notes',
       'image_path',
+      'image_paths',
     ]);
 
     for (final s in sites) {
@@ -479,6 +543,8 @@ class DBHelper {
         s.householdSize,
         s.males,
         s.females,
+        s.children,
+        s.adults,
         s.pensioners,
         s.chronicMembers,
         s.phoneNumber,
@@ -488,10 +554,14 @@ class DBHelper {
         s.directions,
         s.latitude,
         s.longitude,
+        s.accuracy,
+        s.altitude,
+        s.capturedAt?.toIso8601String(),
         s.description,
-        s.services,
+        s.services != null ? jsonEncode(s.services) : '',
         s.notes,
         s.imagePath,
+        s.imagePaths != null ? jsonEncode(s.imagePaths) : '',
       ]);
     }
 
@@ -519,8 +589,12 @@ class DBHelper {
         type TEXT NOT NULL,
         registered_at TEXT NOT NULL,
         image_path TEXT,
+        image_paths TEXT,
         latitude REAL,
         longitude REAL,
+        accuracy REAL,
+        altitude REAL,
+        captured_at TEXT,
         address TEXT,
         landmark TEXT,
         description TEXT,
@@ -528,6 +602,8 @@ class DBHelper {
         household_size INTEGER,
         males INTEGER,
         females INTEGER,
+        children INTEGER,
+        adults INTEGER,
         pensioners INTEGER,
         chronic_members INTEGER,
         phone_number TEXT,
@@ -681,6 +757,15 @@ class DBHelper {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_sites_synced ON sites(isSynced)',
       );
+    }
+
+    if (oldVersion < 7) {
+      await _addColumnIfNotExists(db, 'sites', 'image_paths', 'TEXT');
+      await _addColumnIfNotExists(db, 'sites', 'accuracy', 'REAL');
+      await _addColumnIfNotExists(db, 'sites', 'altitude', 'REAL');
+      await _addColumnIfNotExists(db, 'sites', 'captured_at', 'TEXT');
+      await _addColumnIfNotExists(db, 'sites', 'children', 'INTEGER');
+      await _addColumnIfNotExists(db, 'sites', 'adults', 'INTEGER');
     }
   }
 
@@ -997,8 +1082,8 @@ class DBHelper {
         directions: '',
       ),
       Site(
-        name: 'Ulundi Primary School',
-        village: 'Ulundi',
+        name: 'Mandlakazi Primary School',
+        village: 'Mandlakazi',
         type: SiteType.school,
         registeredAt: now.subtract(const Duration(hours: 1)),
         siteCode: '',

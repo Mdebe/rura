@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Bottom navigation with dynamic Admin/Register center slot
-/// Layout: Home / Search / [Register or Admin] / Map / Profile
+/// Layout: Home / Search / [Register + Button] / Map / Profile
+/// Admin accessed via Dashboard quick action only - not in bottom nav
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -21,37 +22,38 @@ class AppBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build nav items with dynamic center
+    // Map bottom nav indices to AppShellScreen indices
+    // Bottom: 0=Home, 1=Search, 2=Register, 3=Map, 4=Profile
+    // Shell:  0=Home, 1=Search, 2=Register, 3=Map, 4=Reports, 5=Profile, 6=Admin
+
+    int mapShellToBottom(int shellIndex) {
+      if (shellIndex <= 3) return shellIndex;
+      if (shellIndex == 5) return 4; // Profile
+      return 0; // Admin/Reports default to Home in nav
+    }
+
+    final bottomIndex = mapShellToBottom(currentIndex);
+
     final items = <Widget>[
       _NavItem(
         icon: Icons.home_outlined,
         activeIcon: Icons.home,
         label: 'Home',
-        selected: currentIndex == 0,
+        selected: bottomIndex == 0,
         onTap: () => onTap(0),
       ),
       _NavItem(
         icon: Icons.search,
         activeIcon: Icons.search,
         label: 'Search',
-        selected: currentIndex == 1,
+        selected: bottomIndex == 1,
         onTap: () => onTap(1),
       ),
     ];
 
-    // Center slot: Register button takes priority, else Admin tab
+    // Center slot: Always register button if allowed
     if (showRegisterAction) {
       items.add(_CenterAction(onTap: onRegisterTap));
-    } else if (isAdmin) {
-      items.add(
-        _NavItem(
-          icon: Icons.admin_panel_settings_outlined,
-          activeIcon: Icons.admin_panel_settings,
-          label: 'Admin',
-          selected: currentIndex == 2,
-          onTap: () => onTap(2),
-        ),
-      );
     } else {
       items.add(const SizedBox(width: 48)); // Spacer
     }
@@ -61,15 +63,15 @@ class AppBottomNav extends StatelessWidget {
         icon: Icons.map_outlined,
         activeIcon: Icons.map,
         label: 'Map',
-        selected: currentIndex == 3,
+        selected: bottomIndex == 3,
         onTap: () => onTap(3),
       ),
       _NavItem(
         icon: Icons.person_outline,
         activeIcon: Icons.person,
         label: 'Profile',
-        selected: currentIndex == 4,
-        onTap: () => onTap(4),
+        selected: bottomIndex == 4,
+        onTap: () => onTap(5), // Profile is index 5 in shell
       ),
     ]);
 
