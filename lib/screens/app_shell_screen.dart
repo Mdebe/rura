@@ -9,10 +9,7 @@ import 'dashboard_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
 import 'register_site_screen.dart';
-import 'reports_screen.dart';
 import 'site_list_screen.dart';
-
-enum AppTab { dashboard, sites, register, map, reports, admin, profile }
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -22,87 +19,10 @@ class AppShellScreen extends StatefulWidget {
 }
 
 class _AppShellScreenState extends State<AppShellScreen> {
-  AppTab _currentTab = AppTab.dashboard;
+  int _currentIndex = 0;
   int _refreshToken = 0;
 
-  List<AppTab> _tabsForRole(bool isAdmin) {
-    return [
-      AppTab.dashboard,
-      AppTab.sites,
-      AppTab.register,
-      AppTab.map,
-      AppTab.reports,
-      if (isAdmin) AppTab.admin,
-      AppTab.profile,
-    ];
-  }
-
-  String _titleForTab(AppTab tab) {
-    switch (tab) {
-      case AppTab.dashboard:
-        return 'Dashboard';
-      case AppTab.sites:
-        return 'Sites';
-      case AppTab.map:
-        return 'Map';
-      case AppTab.reports:
-        return 'Reports';
-      case AppTab.admin:
-        return 'Admin';
-      case AppTab.profile:
-        return 'Profile';
-      case AppTab.register:
-        return 'Dashboard';
-    }
-  }
-
-  String _subtitleForTab(AppTab tab) {
-    switch (tab) {
-      case AppTab.dashboard:
-        return 'Offline-first census app';
-      case AppTab.sites:
-        return 'Search and review saved sites';
-      case AppTab.map:
-        return 'Offline area overview';
-      case AppTab.reports:
-        return 'Local summaries and counts';
-      case AppTab.admin:
-        return 'Manage users and system';
-      case AppTab.profile:
-        return 'Enumerator profile';
-      case AppTab.register:
-        return 'Offline-first census app';
-    }
-  }
-
-  Widget _screenForTab(AppTab tab) {
-    switch (tab) {
-      case AppTab.dashboard:
-        return DashboardScreen(
-          refreshToken: _refreshToken,
-          onNavigate: (index) {
-            final tabs = _tabsForRole(_isAdmin);
-            if (index < tabs.length) setState(() => _currentTab = tabs[index]);
-          },
-          onOpenRegister: _openRegister,
-        );
-      case AppTab.sites:
-        return const SiteListScreen();
-      case AppTab.map:
-        return MapScreen(refreshToken: _refreshToken);
-      case AppTab.reports:
-        return const ReportsScreen();
-      case AppTab.admin:
-        return const AdminScreen();
-      case AppTab.profile:
-        return const ProfileScreen();
-      case AppTab.register:
-        return const SizedBox.shrink(); // Never shown
-    }
-  }
-
-  bool get _isAdmin =>
-      context.read<AuthProvider>().currentUser?.role == 'Admin';
+  static const bool _enumeratorsCanRegister = true;
 
   Future<void> _openRegister() async {
     final saved = await Navigator.push<bool>(
@@ -113,7 +33,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
     if (saved == true) {
       setState(() {
         _refreshToken += 1;
-        _currentTab = AppTab.dashboard;
+        _currentIndex = 0;
       });
       if (mounted) {
         ScaffoldMessenger.of(
@@ -127,19 +47,45 @@ class _AppShellScreenState extends State<AppShellScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final isAdmin = user?.role == 'Admin';
-    final tabs = _tabsForRole(isAdmin);
+    final canRegister = isAdmin || _enumeratorsCanRegister;
 
-    // If current tab not available for role, reset to dashboard
-    if (!tabs.contains(_currentTab)) {
-      _currentTab = AppTab.dashboard;
+    final screens = <Widget>[
+      DashboardScreen(
+        refreshToken: _refreshToken,
+        onNavigate: (index) => setState(() => _currentIndex = index),
+        onOpenRegister: _openRegister,
+      ), // 0
+      const SiteListScreen(), // 1
+      if (canRegister) const SizedBox.shrink(), // 2: Register placeholder
+      if (!canRegister && isAdmin)
+        const AdminScreen(), // 2: Admin if no register
+      MapScreen(refreshToken: _refreshToken), // 3
+      const ProfileScreen(), // 4
+    ];
+
+    if (_currentIndex >= screens.length) _currentIndex = 0;
+
+    String getTitle() {
+      switch (_currentIndex) {
+        case 0:
+          return 'Dashboard';
+        case 1:
+          return 'Sites';
+        case 2:
+          return canRegister ? 'Register' : 'Admin';
+        case 3:
+          return 'Map';
+        case 4:
+          return 'Profile';
+        default:
+          return 'Dashboard';
+      }
     }
-
-    final currentIndex = tabs.indexOf(_currentTab);
 
     return Scaffold(
       appBar: RuralMapAppBar(
-        title: _titleForTab(_currentTab),
-        subtitle: _subtitleForTab(_currentTab),
+        title: getTitle(),
+        subtitle: 'Offline-first census app',
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -147,21 +93,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: currentIndex,
-        children: tabs.map((t) => _screenForTab(t)).toList(),
-      ),
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: AppBottomNav(
-        currentIndex: currentIndex,
+        currentIndex: _currentIndex,
         isAdmin: isAdmin,
-        onTap: (index) {
-          final selectedTab = tabs[index];
-          if (selectedTab == AppTab.register) {
-            _openRegister();
-            return;
-          }
-          setState(() => _currentTab = selectedTab);
-        },
+        showRegisterAction: canRegister,
+        onTap: (index) => setState(() => _currentIndex = index),
         onRegisterTap: _openRegister,
       ),
     );

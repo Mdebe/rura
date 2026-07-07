@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../database/db_helper.dart';
 import '../models/user.dart';
 import '../models/site.dart';
@@ -12,13 +13,16 @@ class AdminScreen extends StatefulWidget {
   State<AdminScreen> createState() => _AdminScreenState();
 }
 
-class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
+class _AdminScreenState extends State<AdminScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<AppUser> _users = [];
+  List<AppUser> _filteredUsers = [];
   List<Site> _allSites = [];
   bool _loading = true;
   int _adminCount = 0;
   int _enumeratorCount = 0;
+  String _searchQuery = '';
 
   // Define roles here for consistency
   static const String roleAdmin = 'Admin';
@@ -38,15 +42,33 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final users = await DBHelper.instance.getAllUsers();
     final sites = await DBHelper.instance.getAllSites();
     final adminCount = await DBHelper.instance.getUserCountByRole(roleAdmin);
-    final enumCount = await DBHelper.instance.getUserCountByRole(roleEnumerator);
+    final enumCount = await DBHelper.instance.getUserCountByRole(
+      roleEnumerator,
+    );
 
     if (!mounted) return;
     setState(() {
       _users = users;
+      _filteredUsers = users;
       _allSites = sites;
       _adminCount = adminCount;
       _enumeratorCount = enumCount;
       _loading = false;
+    });
+  }
+
+  void _filterUsers(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredUsers = _users;
+      } else {
+        _filteredUsers = _users.where((u) {
+          return u.name.toLowerCase().contains(query.toLowerCase()) ||
+              u.email.toLowerCase().contains(query.toLowerCase()) ||
+              u.phone.toLowerCase().contains(query.toLowerCase());
+        }).toList();
+      }
     });
   }
 
@@ -55,7 +77,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final nameCtrl = TextEditingController(text: user?.name ?? '');
     final emailCtrl = TextEditingController(text: user?.email ?? '');
     final phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    final passwordCtrl = TextEditingController();
     String role = user?.role ?? roleEnumerator;
+    bool creating = false;
+    String? errorMsg;
 
     final result = await showDialog<bool>(
       context: context,
@@ -68,25 +93,52 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               children: [
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Full Name'),
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: emailCtrl,
-                  decoration: const InputDecoration(labelText: 'Email'),
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
+                  ),
                   keyboardType: TextInputType.emailAddress,
-                  enabled: !isEdit, // Email is PK, can't edit
+                  enabled: !isEdit,
+                  textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: phoneCtrl,
-                  decoration: const InputDecoration(labelText: 'Phone'),
+                  decoration: const InputDecoration(
+                    labelText: 'Phone',
+                    prefixIcon: Icon(Icons.phone),
+                  ),
                   keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
                 ),
+                if (!isEdit) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passwordCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: Icon(Icons.lock),
+                      helperText: 'Min 6 characters',
+                    ),
+                    obscureText: true,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: role,
-                  decoration: const InputDecoration(labelText: 'Role'),
+                  decoration: const InputDecoration(
+                    labelText: 'Role',
+                    prefixIcon: Icon(Icons.badge),
+                  ),
                   items: roles
                       .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                       .toList(),
@@ -95,40 +147,99 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 if (isEdit && user.lastLogin != null) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Last login: ${user.lastLogin != null ? DateFormat('d MMM yyyy, HH:mm').format(user.lastLogin!) : 'Never'}',
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    'Last login: ${DateFormat('d MMM yyyy, HH:mm').format(user.lastLogin!)}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                if (errorMsg != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    errorMsg!,
+                    style: const TextStyle(color: AppColors.error),
                   ),
                 ],
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            TextButton(
+              onPressed: creating
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
-              onPressed: () async {
-                if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty) {
-                  if (!dialogContext.mounted) return; // Fixed: use dialogContext.mounted
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Name and email required')),
-                  );
-                  return;
-                }
-                final newUser = AppUser(
-                  name: nameCtrl.text,
-                  email: emailCtrl.text,
-                  phone: phoneCtrl.text,
-                  role: role,
-                  createdAt: user?.createdAt ?? DateTime.now(),
-                  lastLogin: user?.lastLogin,
-                );
-                if (isEdit) {
-                  await DBHelper.instance.updateUser(newUser);
-                } else {
-                  await DBHelper.instance.insertUser(newUser);
-                }
-                if (dialogContext.mounted) Navigator.pop(dialogContext, true); // Fixed
-              },
-              child: Text(isEdit ? 'Update' : 'Add'),
+              onPressed: creating
+                  ? null
+                  : () async {
+                      if (nameCtrl.text.isEmpty || emailCtrl.text.isEmpty) {
+                        setDialogState(
+                          () => errorMsg = 'Name and email required',
+                        );
+                        return;
+                      }
+                      if (!isEdit && passwordCtrl.text.length < 6) {
+                        setDialogState(
+                          () => errorMsg = 'Password min 6 characters',
+                        );
+                        return;
+                      }
+
+                      setDialogState(() {
+                        creating = true;
+                        errorMsg = null;
+                      });
+
+                      try {
+                        if (!isEdit) {
+                          // Create Firebase Auth user
+                          await FirebaseAuth.instance
+                              .createUserWithEmailAndPassword(
+                                email: emailCtrl.text.trim(),
+                                password: passwordCtrl.text,
+                              );
+                        }
+
+                        final newUser = AppUser(
+                          name: nameCtrl.text.trim(),
+                          email: emailCtrl.text.trim(),
+                          phone: phoneCtrl.text.trim(),
+                          role: role,
+                          createdAt: user?.createdAt ?? DateTime.now(),
+                          lastLogin: user?.lastLogin,
+                        );
+
+                        if (isEdit) {
+                          await DBHelper.instance.updateUser(newUser);
+                        } else {
+                          await DBHelper.instance.insertUser(newUser);
+                        }
+
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        setDialogState(() {
+                          errorMsg = e.message ?? 'Failed to create user';
+                          creating = false;
+                        });
+                      } catch (e) {
+                        setDialogState(() {
+                          errorMsg = 'Error: $e';
+                          creating = false;
+                        });
+                      }
+                    },
+              child: creating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(isEdit ? 'Update' : 'Add'),
             ),
           ],
         ),
@@ -139,13 +250,29 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   }
 
   Future<void> _deleteUser(AppUser user) async {
+    // Prevent deleting last admin
+    if (user.role == roleAdmin && _adminCount <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot delete last admin'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete User'),
-        content: Text('Delete ${user.name}? This cannot be undone.'),
+        content: Text(
+          'Delete ${user.name}? This removes local data only. Firebase user must be deleted from Console.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -157,6 +284,13 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     if (confirm == true) {
       await DBHelper.instance.deleteUser(user.email);
       _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User deleted. Remove from Firebase Console too.'),
+          ),
+        );
+      }
     }
   }
 
@@ -169,7 +303,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           'This will delete ALL sites. This action cannot be undone.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -182,14 +319,19 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       await DBHelper.instance.deleteAllSites();
       _loadData();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All sites deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('All sites deleted')));
       }
     }
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -240,7 +382,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             color: isAdmin ? AppColors.error : AppColors.primary,
           ),
         ),
-        title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          user.name,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -249,14 +394,17 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.info.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     user.role,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       color: AppColors.info,
                       fontWeight: FontWeight.w600,
@@ -267,7 +415,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   const SizedBox(width: 8),
                   Text(
                     'Last: ${DateFormat('d MMM').format(user.lastLogin!)}',
-                    style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ],
               ],
@@ -315,17 +466,37 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     children: [
                       Row(
                         children: [
-                          _buildStatCard('Total Users', _users.length.toString(), Icons.people, AppColors.primary),
+                          _buildStatCard(
+                            'Total Users',
+                            _users.length.toString(),
+                            Icons.people,
+                            AppColors.primary,
+                          ),
                           const SizedBox(width: 12),
-                          _buildStatCard('Enumerators', _enumeratorCount.toString(), Icons.person_pin, AppColors.info),
+                          _buildStatCard(
+                            'Enumerators',
+                            _enumeratorCount.toString(),
+                            Icons.person_pin,
+                            AppColors.info,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          _buildStatCard('Total Sites', _allSites.length.toString(), Icons.home_work, AppColors.success),
+                          _buildStatCard(
+                            'Total Sites',
+                            _allSites.length.toString(),
+                            Icons.home_work,
+                            AppColors.success,
+                          ),
                           const SizedBox(width: 12),
-                          _buildStatCard('Admins', _adminCount.toString(), Icons.shield, AppColors.error),
+                          _buildStatCard(
+                            'Admins',
+                            _adminCount.toString(),
+                            Icons.shield,
+                            AppColors.error,
+                          ),
                         ],
                       ),
                     ],
@@ -336,29 +507,52 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Row(
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: Text(
-                              'Manage Users',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Manage Users',
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              FilledButton.icon(
+                                onPressed: () => _showUserDialog(),
+                                icon: const Icon(Icons.add),
+                                label: const Text('Add User'),
+                              ),
+                            ],
                           ),
-                          FilledButton.icon(
-                            onPressed: () => _showUserDialog(),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add User'),
+                          const SizedBox(height: 12),
+                          TextField(
+                            decoration: const InputDecoration(
+                              labelText: 'Search users',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: _filterUsers,
                           ),
                         ],
                       ),
                     ),
                     Expanded(
-                      child: _users.isEmpty
-                          ? const Center(child: Text('No users yet'))
+                      child: _filteredUsers.isEmpty
+                          ? Center(
+                              child: Text(
+                                _searchQuery.isEmpty
+                                    ? 'No users yet'
+                                    : 'No users found',
+                              ),
+                            )
                           : ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount: _users.length,
-                              itemBuilder: (_, i) => _buildUserTile(_users[i]),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              itemCount: _filteredUsers.length,
+                              itemBuilder: (_, i) =>
+                                  _buildUserTile(_filteredUsers[i]),
                             ),
                     ),
                   ],
@@ -369,9 +563,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   children: [
                     Card(
                       child: ListTile(
-                        leading: const Icon(Icons.delete_forever, color: AppColors.error),
+                        leading: const Icon(
+                          Icons.delete_forever,
+                          color: AppColors.error,
+                        ),
                         title: const Text('Delete All Sites'),
-                        subtitle: Text('${_allSites.length} sites will be permanently deleted'),
+                        subtitle: Text(
+                          '${_allSites.length} sites will be permanently deleted',
+                        ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: _deleteAllData,
                       ),
@@ -379,12 +578,17 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     const SizedBox(height: 12),
                     Card(
                       child: ListTile(
-                        leading: const Icon(Icons.download, color: AppColors.primary),
+                        leading: const Icon(
+                          Icons.download,
+                          color: AppColors.primary,
+                        ),
                         title: const Text('Export Data'),
                         subtitle: const Text('Coming soon'),
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Export feature coming soon')),
+                            const SnackBar(
+                              content: Text('Export feature coming soon'),
+                            ),
                           );
                         },
                       ),
