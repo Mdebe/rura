@@ -4,28 +4,38 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
-      - run: flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - run: flutter analyze
+      - name: Build Release APK
+        run: flutter build apk --release
 
-      - run: flutter test
-        continue-on-error: true
-
-      - run: flutter build apk --release
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
         with:
-          name: release-apk
+          name: RuralMap-Release-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
