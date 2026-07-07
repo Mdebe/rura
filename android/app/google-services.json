@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "231386436060",
+    "project_id": "georura",
+    "storage_bucket": "georura.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:231386436060:android:713a3b73a91126262bff19",
+        "android_client_info": {
+          "package_name": "com.example.ruralmap"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "231386436060-hd3p972ki269tm05thq6n0u0ta382go6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWyoRDxJp0sVfBi5NTkPZgNm2akLwTtKg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "231386436060-hd3p972ki269tm05thq6n0u0ta382go6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

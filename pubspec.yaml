@@ -1,0 +1,88 @@
+name: ruralmap
+
+description: GeoRura Mandlazini Demonstration Platform
+
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Local Database
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  path_provider: ^2.1.3
+
+  # Device Information
+  package_info_plus: ^8.3.1
+  device_info_plus: ^11.5.0
+
+  # Connectivity
+  connectivity_plus: ^7.0.0 
+
+  # Permissions
+  permission_handler: ^12.0.1
+
+  # GPS & Maps
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+
+  # Camera
+  image_picker: ^1.0.1
+  file_selector: ^1.0.3
+
+  # Utilities
+  intl: ^0.19.0
+  url_launcher: ^6.2.2
+  shared_preferences: ^2.2.0
+   
+  qr_flutter: ^4.0.0
+  excel: ^4.0.6
+  csv: ^6.0.0
+  share_plus: ^10.1.4
+
+  # State Management
+  provider: ^6.1.5+1
+
+  # Firebase
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.0
+  cloud_firestore: ^5.6.12
+
+  # Auth & Security
+  local_auth: ^2.3.0
+  crypto: ^3.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+
+# App icon config
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  min_sdk_android: 21 # android.minSdkVersion
+  
+  # Optional: Adaptive icon for Android 8+
+  adaptive_icon_background: "#FFFFFF" # Background color
+  adaptive_icon_foreground: "assets/icons/app_icon.png" # Your icon
+  
+  # Optional: Remove alpha channel for iOS
+  remove_alpha_ios: true
