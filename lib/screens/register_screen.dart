@@ -39,14 +39,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final auth = context.read<AuthProvider>();
     final error = await auth.register(
-      name: _nameController.text,
-      email: _emailController.text,
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
       password: _passwordController.text,
-      phone: _phoneController.text,
+      phone: _phoneController.text.trim(),
       role: 'Enumerator',
     );
 
-    if (error == null && mounted) {
+    if (!mounted) return;
+
+    setState(() {
+      _loading = false;
+    });
+
+    if (error == null) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -54,9 +60,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-    } else if (mounted) {
+    } else {
       setState(() {
-        _loading = false;
         _errorMessage = error;
       });
     }

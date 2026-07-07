@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import '../database/db_helper.dart';
 import '../models/user.dart';
 
@@ -48,7 +49,8 @@ class AuthProvider with ChangeNotifier {
         final doc = await _firestore
             .collection('users')
             .doc(_firebaseUser!.uid)
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 10));
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
         } else {
@@ -60,7 +62,8 @@ class AuthProvider with ChangeNotifier {
             await _firestore
                 .collection('users')
                 .doc(_firebaseUser!.uid)
-                .set(updated.toMap());
+                .set(updated.toMap())
+                .timeout(const Duration(seconds: 10));
             await DBHelper.instance.updateUser(updated);
             _currentUser = updated;
           }
@@ -81,12 +84,14 @@ class AuthProvider with ChangeNotifier {
     if (firebaseUser != null) {
       try {
         final docRef = _firestore.collection('users').doc(firebaseUser.uid);
-        final doc = await docRef.get();
+        final doc = await docRef.get().timeout(const Duration(seconds: 10));
 
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
           final now = DateTime.now();
-          await docRef.update({'lastLogin': now.toIso8601String()});
+          await docRef
+              .update({'lastLogin': now.toIso8601String()})
+              .timeout(const Duration(seconds: 10));
           _currentUser = _currentUser!.copyWith(lastLogin: now);
           await DBHelper.instance.updateUser(_currentUser!);
         } else {
@@ -95,7 +100,9 @@ class AuthProvider with ChangeNotifier {
           );
           if (_currentUser != null) {
             final userWithUid = _currentUser!.copyWith(uid: firebaseUser.uid);
-            await docRef.set(userWithUid.toMap());
+            await docRef
+                .set(userWithUid.toMap())
+                .timeout(const Duration(seconds: 10));
             await DBHelper.instance.updateUser(userWithUid);
             _currentUser = userWithUid;
           } else {
@@ -128,7 +135,7 @@ class AuthProvider with ChangeNotifier {
 
       final uid = cred.user!.uid;
       final docRef = _firestore.collection('users').doc(uid);
-      final doc = await docRef.get();
+      final doc = await docRef.get().timeout(const Duration(seconds: 10));
       final now = DateTime.now();
 
       if (!doc.exists) {
@@ -146,12 +153,14 @@ class AuthProvider with ChangeNotifier {
                     ))
                 .copyWith(uid: uid, lastLogin: now);
 
-        await docRef.set(user.toMap());
+        await docRef.set(user.toMap()).timeout(const Duration(seconds: 10));
         await DBHelper.instance.insertUser(user);
         _currentUser = user;
       } else {
         _currentUser = AppUser.fromMap(doc.data()!);
-        await docRef.update({'lastLogin': now.toIso8601String()});
+        await docRef
+            .update({'lastLogin': now.toIso8601String()})
+            .timeout(const Duration(seconds: 10));
         _currentUser = _currentUser!.copyWith(lastLogin: now);
         await DBHelper.instance.updateUser(_currentUser!);
       }
@@ -160,6 +169,8 @@ class AuthProvider with ChangeNotifier {
       return null;
     } on FirebaseAuthException catch (e) {
       return _handleFirebaseError(e);
+    } on TimeoutException {
+      return 'Network timeout. Check your connection.';
     } catch (e) {
       return 'Login failed: ${e.toString()}';
     }
@@ -193,7 +204,13 @@ class AuthProvider with ChangeNotifier {
         lastLogin: now,
       );
 
-      await _firestore.collection('users').doc(uid).set(user.toMap());
+      // Timeout Firestore write to prevent hanging
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .set(user.toMap())
+          .timeout(const Duration(seconds: 10));
+
       await DBHelper.instance.insertUser(user);
       await _firebaseAuth.signOut();
 
@@ -203,6 +220,12 @@ class AuthProvider with ChangeNotifier {
         await cred?.user?.delete();
       } catch (_) {}
       return _handleFirebaseError(e);
+    } on TimeoutException {
+      // User created in Auth but Firestore failed - delete the auth user
+      try {
+        await cred?.user?.delete();
+      } catch (_) {}
+      return 'Network timeout. Please check your connection and try again.';
     } catch (e) {
       try {
         await cred?.user?.delete();
@@ -249,15 +272,18 @@ class AuthProvider with ChangeNotifier {
         phone: phone.trim(),
       );
 
-      await _firestore.collection('users').doc(_firebaseUser!.uid).update({
-        'name': name.trim(),
-        'phone': phone.trim(),
-      });
+      await _firestore
+          .collection('users')
+          .doc(_firebaseUser!.uid)
+          .update({'name': name.trim(), 'phone': phone.trim()})
+          .timeout(const Duration(seconds: 10));
 
       await DBHelper.instance.updateUser(updated);
       _currentUser = updated;
       notifyListeners();
       return null;
+    } on TimeoutException {
+      return 'Network timeout. Try again.';
     } catch (e) {
       return 'Failed to update profile: $e';
     }
@@ -296,7 +322,11 @@ class AuthProvider with ChangeNotifier {
       final uid = _firebaseUser!.uid;
       final email = _currentUser!.email;
 
-      await _firestore.collection('users').doc(uid).delete();
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .delete()
+          .timeout(const Duration(seconds: 10));
       await DBHelper.instance.deleteUser(email);
       await _firebaseUser!.delete();
 
@@ -310,6 +340,8 @@ class AuthProvider with ChangeNotifier {
       return null;
     } on FirebaseAuthException catch (e) {
       return _handleFirebaseError(e);
+    } on TimeoutException {
+      return 'Network timeout. Try again.';
     } catch (e) {
       return 'Failed to delete account: $e';
     }
