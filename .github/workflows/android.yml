@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -19,6 +21,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -26,16 +29,59 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Get version from pubspec
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build Release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload Release APK
+      - name: Rename APKs
+        run: |
+          cd build/app/outputs/flutter-apk
+          mv app-arm64-v8a-release.apk georura-v${{ steps.version.outputs.version }}-arm64.apk
+          mv app-armeabi-v7a-release.apk georura-v${{ steps.version.outputs.version }}-arm.apk
+          mv app-x86_64-release.apk georura-v${{ steps.version.outputs.version }}-x64.apk
+          cp app-release.apk georura.apk
+          cp app-release.apk georura-v${{ steps.version.outputs.version }}-universal.apk
+
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RuralMap-Release-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: Georura-Release-APKs
+          path: build/app/outputs/flutter-apk/georura*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/georura.apk
+            build/app/outputs/flutter-apk/georura-v${{ steps.version.outputs.version }}-universal.apk
+            build/app/outputs/flutter-apk/georura-v${{ steps.version.outputs.version }}-arm64.apk
+            build/app/outputs/flutter-apk/georura-v${{ steps.version.outputs.version }}-arm.apk
+            build/app/outputs/flutter-apk/georura-v${{ steps.version.outputs.version }}-x64.apk
+          name: Georura v${{ steps.version.outputs.version }}
+          body: |
+            ## Georura v${{ steps.version.outputs.version }}
+            
+            ### Downloads
+            - **georura.apk** - Universal APK, works on all devices
+            - **georura-v${{ steps.version.outputs.version }}-arm64.apk** - For modern phones (recommended)
+            - **georura-v${{ steps.version.outputs.version }}-arm.apk** - For older 32-bit devices
+            - **georura-v${{ steps.version.outputs.version }}-x64.apk** - For x86 emulators
+            
+            ### What's Changed
+            See commit history for details.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
