@@ -7,11 +7,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../database/db_helper.dart';
-
 import '../providers/auth_provider.dart';
 import '../services/sync_service.dart';
 import 'profile_edit_screen.dart';
-import 'admin_screen.dart'; // Add this
+import 'admin_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -141,7 +140,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _importFromCsv() async {
     setState(() => _importing = true);
     try {
-      // Define CSV file type
       const XTypeGroup csvTypeGroup = XTypeGroup(
         label: 'CSV',
         extensions: <String>['csv'],
@@ -487,7 +485,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
               ),
-              // Admin only section
               if (isAdmin) ...[
                 const SizedBox(height: 20),
                 _sectionTitle("Admin"),
