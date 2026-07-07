@@ -4,7 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
 import 'database/db_helper.dart';
-import 'models/user.dart';
+
 import 'providers/auth_provider.dart';
 import 'screens/app_shell_screen.dart';
 import 'screens/login_screen.dart';
