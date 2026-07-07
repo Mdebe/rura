@@ -37,7 +37,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 6, // bumped for new demographic columns
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -78,14 +78,13 @@ class DBHelper {
       csvString,
     );
 
-    if (rows.length <= 1) return 0; // Only header or empty
+    if (rows.length <= 1) return 0;
 
     final headers = rows.first
         .map((e) => e.toString().trim().toLowerCase())
         .toList();
     final db = await database;
     int imported = 0;
-    // ignore: unused_local_variable
     int skipped = 0;
 
     await db.transaction((txn) async {
@@ -101,7 +100,6 @@ class DBHelper {
         }
 
         try {
-          // Skip if required fields missing
           final name = map['name']?.toString().trim();
           final village = map['village']?.toString().trim();
           if (name == null ||
@@ -171,7 +169,7 @@ class DBHelper {
                       '',
                 ) ??
                 DateTime.now(),
-            isSynced: false, // Always 0 for imports
+            isSynced: false,
           );
 
           await txn.insert(
@@ -747,6 +745,40 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
+  // NEW METHODS FOR SETUP CHECK
+  // ---------------------------------------------------------------------------
+
+  Future<bool> hasUsers() async {
+    final db = await database;
+    final count =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM users'),
+        ) ??
+        0;
+    return count > 0;
+  }
+
+  Future<int> getUserCount() async {
+    final db = await database;
+    final count =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM users'),
+        ) ??
+        0;
+    return count;
+  }
+
+  Future<bool> hasAdminUser() async {
+    final db = await database;
+    final count =
+        Sqflite.firstIntValue(
+          await db.rawQuery("SELECT COUNT(*) FROM users WHERE role = 'Admin'"),
+        ) ??
+        0;
+    return count > 0;
+  }
+
+  // ---------------------------------------------------------------------------
   // SITE CRUD
   // ---------------------------------------------------------------------------
 
@@ -810,7 +842,7 @@ class DBHelper {
         OR village LIKE?
         OR household_head LIKE?
       ''',
-      whereArgs: ['%$query%', '%$query%'],
+      whereArgs: ['%$query%', '%$query%', '%$query%'],
       orderBy: 'registered_at DESC',
     );
     return rows.map((e) => Site.fromMap(e)).toList();

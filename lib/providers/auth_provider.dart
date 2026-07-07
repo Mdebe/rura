@@ -11,7 +11,6 @@ class AuthProvider with ChangeNotifier {
   AppUser? _currentUser;
   User? _firebaseUser;
   bool _isLoaded = false;
-  bool _authListenerActive = false;
 
   AppUser? get currentUser => _currentUser;
   User? get firebaseUser => _firebaseUser;
@@ -20,22 +19,10 @@ class AuthProvider with ChangeNotifier {
   bool get isAdmin => _currentUser?.role == 'Admin';
 
   AuthProvider() {
-    _init();
-  }
-
-  Future<void> _init() async {
-    // Listen to Firebase auth state changes
     _firebaseAuth.authStateChanges().listen(_onAuthStateChanged);
-    _authListenerActive = true;
   }
 
-  // Called from main.dart after runApp
   Future<void> checkAuthStatus() async {
-    // Wait for listener to fire first time
-    if (!_authListenerActive) {
-      await Future.delayed(const Duration(milliseconds: 100));
-    }
-
     _firebaseUser = _firebaseAuth.currentUser;
     if (_firebaseUser != null) {
       try {
@@ -43,7 +30,7 @@ class AuthProvider with ChangeNotifier {
           _firebaseUser!.email!,
         );
       } catch (e) {
-        debugPrint('Failed to load user from DB: $e');
+        debugPrint('Failed to load user: $e');
         _currentUser = null;
       }
     }
@@ -53,7 +40,6 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
     _firebaseUser = firebaseUser;
-
     if (firebaseUser != null) {
       try {
         _currentUser = await DBHelper.instance.getUserByEmail(
@@ -65,13 +51,12 @@ class AuthProvider with ChangeNotifier {
           _currentUser = updated;
         }
       } catch (e) {
-        debugPrint('Error syncing user on auth change: $e');
+        debugPrint('Error syncing user: $e');
         _currentUser = null;
       }
     } else {
       _currentUser = null;
     }
-
     if (_isLoaded) notifyListeners();
   }
 
@@ -85,7 +70,6 @@ class AuthProvider with ChangeNotifier {
         password: password,
       );
 
-      // Ensure local user exists
       var localUser = await DBHelper.instance.getUserByEmail(email.trim());
       if (localUser == null) {
         localUser = AppUser(
@@ -98,7 +82,6 @@ class AuthProvider with ChangeNotifier {
         );
         await DBHelper.instance.insertUser(localUser);
       }
-
       return null;
     } on FirebaseAuthException catch (e) {
       return _handleFirebaseError(e);
@@ -114,8 +97,9 @@ class AuthProvider with ChangeNotifier {
     required String phone,
     required String role,
   }) async {
+    UserCredential? cred;
     try {
-      final cred = await _firebaseAuth.createUserWithEmailAndPassword(
+      cred = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
@@ -130,12 +114,20 @@ class AuthProvider with ChangeNotifier {
         createdAt: DateTime.now(),
         lastLogin: DateTime.now(),
       );
+
       await DBHelper.instance.insertUser(user);
+      await _firebaseAuth.signOut(); // Sign out so user must login
 
       return null;
     } on FirebaseAuthException catch (e) {
+      try {
+        await cred?.user?.delete();
+      } catch (_) {}
       return _handleFirebaseError(e);
     } catch (e) {
+      try {
+        await cred?.user?.delete();
+      } catch (_) {}
       return 'Registration failed: ${e.toString()}';
     }
   }
@@ -144,9 +136,8 @@ class AuthProvider with ChangeNotifier {
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
       if (!canCheck) return false;
-
       return await _localAuth.authenticate(
-        localizedReason: 'Please authenticate to access admin panel',
+        localizedReason: 'Please authenticate',
         options: const AuthenticationOptions(
           biometricOnly: true,
           stickyAuth: true,
@@ -172,7 +163,6 @@ class AuthProvider with ChangeNotifier {
     if (_currentUser == null || _firebaseUser == null) return 'Not logged in';
     try {
       await _firebaseUser!.updateDisplayName(name.trim());
-
       final updated = _currentUser!.copyWith(
         name: name.trim(),
         phone: phone.trim(),
@@ -217,7 +207,6 @@ class AuthProvider with ChangeNotifier {
       await _firebaseUser!.reauthenticateWithCredential(cred);
       await DBHelper.instance.deleteUser(_currentUser!.email);
       await _firebaseUser!.delete();
-
       _currentUser = null;
       _firebaseUser = null;
       notifyListeners();
