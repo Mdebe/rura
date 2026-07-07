@@ -38,7 +38,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 7,
+      version: 8, // Bumped to 8 for firestore_id + isSynced safety
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -86,7 +86,6 @@ class DBHelper {
         .toList();
     final db = await database;
     int imported = 0;
-    // ignore: unused_local_variable
     int skipped = 0;
 
     await db.transaction((txn) async {
@@ -124,7 +123,6 @@ class DBHelper {
                 imagePaths = decoded.map((e) => e.toString()).toList();
               }
             } catch (_) {
-              // If not JSON, treat as single path
               imagePaths = [imagePathsStr];
             }
           }
@@ -141,7 +139,6 @@ class DBHelper {
                     .toList();
               }
             } catch (_) {
-              // Fallback: old comma-separated format
               services = servicesStr
                   .split(',')
                   .map((s) => {'name': s.trim(), 'quality': null})
@@ -234,6 +231,7 @@ class DBHelper {
 
     return imported;
   }
+
   // ---------------------------------------------------------------------------
   // SYNC HELPER - Mark as unsynced on local changes
   // ---------------------------------------------------------------------------
@@ -585,6 +583,8 @@ class DBHelper {
     await db.execute('''
       CREATE TABLE sites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firestore_id TEXT,
+        isSynced INTEGER NOT NULL DEFAULT 0,
         name TEXT NOT NULL,
         village TEXT NOT NULL,
         type TEXT NOT NULL,
@@ -618,8 +618,7 @@ class DBHelper {
         traditional_authority TEXT,
         section TEXT,
         distance_from_landmark REAL,
-        directions TEXT,
-        isSynced INTEGER NOT NULL DEFAULT 0
+        directions TEXT
       )
     ''');
 
@@ -767,6 +766,11 @@ class DBHelper {
       await _addColumnIfNotExists(db, 'sites', 'captured_at', 'TEXT');
       await _addColumnIfNotExists(db, 'sites', 'children', 'INTEGER');
       await _addColumnIfNotExists(db, 'sites', 'adults', 'INTEGER');
+    }
+
+    // Version 8: Add firestore_id for Firebase sync
+    if (oldVersion < 8) {
+      await _addColumnIfNotExists(db, 'sites', 'firestore_id', 'TEXT');
     }
   }
 
