@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../theme/app_theme.dart';
@@ -184,60 +182,6 @@ class GpsCaptureStep extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-
-        // Embedded Map - NEW
-        if (hasLocation)
-          Container(
-            height: 220,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.divider),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: LatLng(latitude!, longitude!),
-                initialZoom: 17,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-                ),
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.georura',
-                ),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: LatLng(latitude!, longitude!),
-                      width: 40,
-                      height: 40,
-                      child: Icon(
-                        Icons.location_pin,
-                        color: AppColors.error,
-                        size: 40,
-                      ),
-                    ),
-                  ],
-                ),
-                if (accuracy != null)
-                  CircleLayer(
-                    circles: [
-                      CircleMarker(
-                        point: LatLng(latitude!, longitude!),
-                        radius: accuracy!,
-                        useRadiusInMeter: true,
-                        color: _qualityColor.withValues(alpha: 0.2),
-                        borderColor: _qualityColor,
-                        borderStrokeWidth: 2,
-                      ),
-                    ],
-                  ),
               ],
             ),
           ),
@@ -443,7 +387,7 @@ class GpsCaptureStep extends StatelessWidget {
 
         // Capture button
         FilledButton.icon(
-          onPressed: gpsLoading || !hasLocation ? null : onCapture,
+          onPressed: gpsLoading ? null : onCapture,
           icon: gpsLoading
               ? const SizedBox(
                   width: 18,
@@ -464,7 +408,9 @@ class GpsCaptureStep extends StatelessWidget {
           ),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            backgroundColor: _canCapture ? AppColors.primary : Colors.grey,
+            backgroundColor: _canCapture || gpsLoading
+                ? AppColors.primary
+                : Colors.grey,
           ),
         ),
 
@@ -485,7 +431,7 @@ class GpsCaptureStep extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onOpenMap,
             icon: const Icon(Icons.open_in_new),
-            label: const Text("Open in OpenStreetMap"),
+            label: const Text("Open in Maps"),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
