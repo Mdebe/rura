@@ -31,19 +31,19 @@ extension SiteTypeX on SiteType {
 /// the local SQLite `sites` table.
 class Site {
   final int? id;
-  final String? firestoreId; // NEW: Firebase doc ID
-  final bool isSynced; // NEW: Sync status flag
+  final String? firestoreId; // Firebase doc ID
+  final bool isSynced; // Sync status flag
   final String name;
   final String village;
   final SiteType type;
   final DateTime registeredAt;
   final String? imagePath; // First/primary image
-  final List<String>? imagePaths; // NEW: All photos
+  final List<String>? imagePaths; // All photos
   final double? latitude;
   final double? longitude;
-  final double? accuracy; // NEW: GPS accuracy in meters
-  final double? altitude; // NEW: Altitude in meters
-  final DateTime? capturedAt; // NEW: When GPS was captured
+  final double? accuracy; // GPS accuracy in meters
+  final double? altitude; // Altitude in meters
+  final DateTime? capturedAt; // When GPS was captured
   final String? address;
   final String? landmark;
   final String? description;
@@ -52,13 +52,12 @@ class Site {
   // Demographic fields
   final int? males;
   final int? females;
-  final int? children; // NEW: Under 18
-  final int? adults; // NEW: 18-64
+  final int? children; // Under 18
+  final int? adults; // 18-64
   final int? pensioners;
   final int? chronicMembers;
   final String? phoneNumber;
-  final List<Map<String, dynamic>>?
-  services; // UPDATED: Now stores [{name, quality}]
+  final List<Map<String, dynamic>>? services; // Stores [{name, quality}]
   final String? notes;
   final String siteCode;
   final String province;
@@ -332,19 +331,40 @@ class Site {
 
   static List<Map<String, dynamic>>? _toServiceList(dynamic value) {
     if (value == null) return null;
+
+    // Already correct type
+    if (value is List<Map<String, dynamic>>) return value;
+
+    // Handle List<String> from old data
+    if (value is List<String>) {
+      return value.map((s) => {'name': s, 'quality': 'Unknown'}).toList();
+    }
+
+    // Handle JSON string
     if (value is String) {
       try {
         final decoded = jsonDecode(value);
         if (decoded is List) {
-          return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+          return decoded.map((e) {
+            if (e is Map) return Map<String, dynamic>.from(e);
+            if (e is String) return {'name': e, 'quality': 'Unknown'};
+            return {'name': e.toString(), 'quality': 'Unknown'};
+          }).toList();
         }
       } catch (_) {
         return null;
       }
     }
+
+    // Handle List<dynamic>
     if (value is List) {
-      return value.map((e) => Map<String, dynamic>.from(e)).toList();
+      return value.map((e) {
+        if (e is Map) return Map<String, dynamic>.from(e);
+        if (e is String) return {'name': e, 'quality': 'Unknown'};
+        return {'name': e.toString(), 'quality': 'Unknown'};
+      }).toList();
     }
+
     return null;
   }
 

@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
+import '../services/site_service.dart'; // Added
 import '../theme/app_theme.dart';
 
 import '../wizard_steps/site_type_step.dart';
@@ -66,6 +66,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   static const int _maxPhotos = 5;
 
   final _formKey = GlobalKey<FormState>();
+  final _siteService = SiteService(); // Added
 
   // Site Info Controllers
   final _nameController = TextEditingController();
@@ -529,9 +530,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       type: _selectedType,
       registeredAt: DateTime.now(),
       imagePath: _photoPaths.isNotEmpty ? _photoPaths.first : null,
-      imagePaths: _photoPaths.isNotEmpty
-          ? _photoPaths
-          : null, // Pass List directly
+      imagePaths: _photoPaths.isNotEmpty ? _photoPaths : null,
       latitude: _latitude,
       longitude: _longitude,
       accuracy: _accuracy,
@@ -562,7 +561,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       services: _services
           .where((s) => s.available)
           .map((s) => s.toJson())
-          .toList(), // Pass List<Map> directly, not jsonEncode
+          .toList(),
       notes: _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim(),
@@ -571,11 +570,15 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     );
 
     try {
-      await DBHelper.instance.insertSite(site);
+      final savedSite = await _siteService.saveSite(site);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Site ${site.siteCode} saved successfully'),
+            content: Text(
+              savedSite.isSynced
+                  ? 'Site ${site.siteCode} saved to cloud'
+                  : 'Site ${site.siteCode} saved locally. Will sync when online',
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -757,13 +760,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           pensionersController: _pensionersController,
           chronicController: _chronicController,
         );
-      case 5:
-        return ServicesStep(
-          notesController: _notesController,
-          onToggleService: _toggleService,
-          onRateService: _rateService,
-          services: [],
-        );
+
       default:
         return ReviewStep(
           selectedType: _selectedType,
@@ -782,22 +779,5 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           accuracy: _accuracy,
         );
     }
-
-    return ReviewStep(
-      selectedType: _selectedType,
-      name: _nameController.text.trim(),
-      village: _villageController.text.trim(),
-      ward: _wardController.text.trim(),
-      address: _addressController.text.trim(),
-      householdHead: _householdHeadController.text.trim(),
-      householdSize: int.tryParse(_householdSizeController.text.trim()),
-      phoneNumber: _phoneController.text.trim(),
-      services: _services,
-      photoPaths: _photoPaths,
-      siteCode: _siteCodeController.text,
-      latitude: _latitude,
-      longitude: _longitude,
-      accuracy: _accuracy,
-    );
   }
 }

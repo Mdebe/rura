@@ -22,6 +22,16 @@ class ServiceAvailability {
       quality: quality,
     );
   }
+
+  Map<String, dynamic> toMap() => {'name': name, 'quality': quality};
+
+  factory ServiceAvailability.fromMap(Map<String, dynamic> map) {
+    return ServiceAvailability(
+      name: map['name'] ?? '',
+      available: true,
+      quality: map['quality'],
+    );
+  }
 }
 
 /// Step 6 — toggles available services/infrastructure with quality ratings.
@@ -132,6 +142,10 @@ class ServicesStep extends StatelessWidget {
     List<Map<String, dynamic>> items,
     bool isTablet,
   ) {
+    final availableInCat = items
+        .where((i) => _getService(i['name'])?.available ?? false)
+        .length;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -161,7 +175,7 @@ class ServicesStep extends StatelessWidget {
             ),
           ),
           subtitle: Text(
-            '${items.where((i) => _getService(i['name'])?.available ?? false).length} of ${items.length} available',
+            '$availableInCat of ${items.length} available',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           children: items
@@ -331,15 +345,15 @@ class ServicesStep extends StatelessWidget {
   Widget _buildSummaryCard(bool isTablet) {
     final availableCount = services.where((s) => s.available).length;
     final totalCount = serviceCategories.values.expand((e) => e).length;
-    final avgQuality =
-        services
-            .where((s) => s.available && s.quality != null)
-            .map((s) => s.quality!)
-            .fold<double>(0, (a, b) => a + b) /
-        (services.where((s) => s.available && s.quality != null).length).clamp(
-          1,
-          double.infinity,
-        );
+    final ratedServices = services.where(
+      (s) => s.available && s.quality != null,
+    );
+    final avgQuality = ratedServices.isEmpty
+        ? 0.0
+        : ratedServices
+                  .map((s) => s.quality!)
+                  .fold<double>(0, (a, b) => a + b) /
+              ratedServices.length;
 
     return Container(
       padding: EdgeInsets.all(isTablet ? 18 : 16),
