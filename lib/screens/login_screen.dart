@@ -12,21 +12,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  String _selectedRole = 'Enumerator';
-  bool _registerMode = false;
   bool _loading = false;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -45,24 +39,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    String? error;
-    if (_registerMode) {
-      error = await auth.register(
-        name: _nameController.text.trim(),
-        email: email,
-        password: password,
-        phone: _phoneController.text.trim(),
-        role: _selectedRole,
-      );
-    } else {
-      error = await auth.login(email: email, password: password);
-    }
+    final error = await auth.login(email: email, password: password);
 
     if (!mounted) return;
 
     if (error == null) {
-      // Success - pop back. Your main.dart wrapper will show HomeScreen
-      Navigator.of(context).pop(true);
+      // Success - StartupWrapper will navigate to AppShellScreen
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       setState(() {
         _loading = false;
@@ -75,8 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_registerMode ? 'Create account' : 'Sign in'),
+        title: const Text('Sign In'),
         centerTitle: true,
+        automaticallyImplyLeading: false, // No back button on login
       ),
       body: SafeArea(
         child: Center(
@@ -87,68 +71,26 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _registerMode
-                        ? 'Register a new field account'
-                        : 'Log in to continue',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                  const Icon(Icons.lock, size: 60, color: Colors.green),
                   const SizedBox(height: 20),
-                  if (_registerMode)
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        prefixIcon: Icon(Icons.person),
-                      ),
-                      textInputAction: TextInputAction.next,
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Please enter a name'
-                          : null,
+                  Text(
+                    'GeoRura',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                  if (_registerMode) const SizedBox(height: 16),
-                  if (_registerMode)
-                    TextFormField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone',
-                        prefixIcon: Icon(Icons.phone),
-                      ),
-                      keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Please enter a phone number'
-                          : null,
-                    ),
-                  if (_registerMode) const SizedBox(height: 16),
-                  if (_registerMode)
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedRole,
-                      decoration: const InputDecoration(
-                        labelText: 'Role',
-                        prefixIcon: Icon(Icons.badge),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Enumerator',
-                          child: Text('Enumerator'),
-                        ),
-                        DropdownMenuItem(value: 'Admin', child: Text('Admin')),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedRole = value);
-                        }
-                      },
-                    ),
-                  if (_registerMode) const SizedBox(height: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Log in to continue',
+                    style: TextStyle(color: Colors.black54),
+                  ),
+                  const SizedBox(height: 32),
                   TextFormField(
                     controller: _emailController,
                     decoration: const InputDecoration(
                       labelText: 'Email',
                       prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
@@ -168,6 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock),
+                      border: OutlineInputBorder(),
                     ),
                     obscureText: true,
                     textInputAction: TextInputAction.done,
@@ -182,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                     onFieldSubmitted: (_) => _submit(),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 24),
                   if (_errorMessage != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -192,34 +135,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                  FilledButton(
-                    onPressed: _loading ? null : _submit,
-                    child: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(_registerMode ? 'Create account' : 'Sign in'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () {
-                            setState(() {
-                              _registerMode = !_registerMode;
-                              _errorMessage = null;
-                            });
-                          },
-                    child: Text(
-                      _registerMode
-                          ? 'Already have an account? Sign in'
-                          : 'Create a new account',
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _loading ? null : _submit,
+                      child: _loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Sign In'),
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Contact your administrator for account access',
+                    style: TextStyle(color: Colors.black45, fontSize: 12),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
