@@ -62,7 +62,8 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('MapScreen load failed: $error\n$stack');
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Unable to load map data. Please check permissions and try again.';
+        _errorMessage =
+            'Unable to load map data. Please check permissions and try again.';
         _loading = false;
       });
     }
@@ -93,10 +94,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
 
-      _currentLocation = LatLng(
-        pos.latitude,
-        pos.longitude,
-      );
+      _currentLocation = LatLng(pos.latitude, pos.longitude);
 
       _accuracy = pos.accuracy;
     } catch (error, stack) {
@@ -106,17 +104,10 @@ class _MapScreenState extends State<MapScreen> {
 
   List<Marker> _buildMarkers() {
     return _sites
-        .where(
-          (e) =>
-              e.latitude != null &&
-              e.longitude != null,
-        )
+        .where((e) => e.latitude != null && e.longitude != null)
         .map(
           (site) => Marker(
-            point: LatLng(
-              site.latitude!,
-              site.longitude!,
-            ),
+            point: LatLng(site.latitude!, site.longitude!),
             width: 55,
             height: 55,
             child: GestureDetector(
@@ -158,12 +149,7 @@ class _MapScreenState extends State<MapScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-
-              Icon(
-                Icons.home_work,
-                size: 60,
-                color: AppColors.primary,
-              ),
+              Icon(Icons.home_work, size: 60, color: AppColors.primary),
 
               const SizedBox(height: 16),
 
@@ -186,8 +172,7 @@ class _MapScreenState extends State<MapScreen> {
               if (site.householdHead != null)
                 Text("Head: ${site.householdHead}"),
 
-              if (site.phoneNumber != null)
-                Text(site.phoneNumber!),
+              if (site.phoneNumber != null) Text(site.phoneNumber!),
 
               const SizedBox(height: 20),
 
@@ -206,9 +191,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_errorMessage != null) {
@@ -219,7 +202,11 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, size: 72, color: Colors.redAccent),
+                const Icon(
+                  Icons.error_outline,
+                  size: 72,
+                  color: Colors.redAccent,
+                ),
                 const SizedBox(height: 20),
                 Text(
                   _errorMessage!,
@@ -227,10 +214,7 @@ class _MapScreenState extends State<MapScreen> {
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _load,
-                  child: const Text('Retry'),
-                ),
+                FilledButton(onPressed: _load, child: const Text('Retry')),
               ],
             ),
           ),
@@ -250,17 +234,13 @@ class _MapScreenState extends State<MapScreen> {
               maxZoom: 20,
             ),
             children: [
-
               TileLayer(
-                urlTemplate:
-                    "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                userAgentPackageName:
-                    "com.mfundo_iphisi.ruralcensus",
+                urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                userAgentPackageName: "com.mfundo_iphisi.ruralcensus",
               ),
 
               MarkerLayer(
                 markers: [
-
                   Marker(
                     point: _currentLocation,
                     width: 55,
@@ -285,14 +265,12 @@ class _MapScreenState extends State<MapScreen> {
             child: Card(
               elevation: 4,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(
+                padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
                 child: Row(
                   children: [
-
                     const Icon(Icons.gps_fixed),
 
                     const SizedBox(width: 10),
@@ -305,11 +283,7 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
 
-                    Chip(
-                      label: Text(
-                        "${_sites.length} Sites",
-                      ),
-                    ),
+                    Chip(label: Text("${_sites.length} Sites")),
                   ],
                 ),
               ),
@@ -321,17 +295,12 @@ class _MapScreenState extends State<MapScreen> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-
           FloatingActionButton.small(
             heroTag: "gps",
             onPressed: () async {
-
               await _loadLocation();
 
-              _mapController.move(
-                _currentLocation,
-                18,
-              );
+              _mapController.move(_currentLocation, 18);
 
               if (mounted) {
                 setState(() {});
@@ -345,13 +314,9 @@ class _MapScreenState extends State<MapScreen> {
           FloatingActionButton.small(
             heroTag: "zoomIn",
             onPressed: () {
-              final camera =
-                  _mapController.camera;
+              final camera = _mapController.camera;
 
-              _mapController.move(
-                camera.center,
-                camera.zoom + 1,
-              );
+              _mapController.move(camera.center, camera.zoom + 1);
             },
             child: const Icon(Icons.add),
           ),
@@ -361,13 +326,9 @@ class _MapScreenState extends State<MapScreen> {
           FloatingActionButton.small(
             heroTag: "zoomOut",
             onPressed: () {
-              final camera =
-                  _mapController.camera;
+              final camera = _mapController.camera;
 
-              _mapController.move(
-                camera.center,
-                camera.zoom - 1,
-              );
+              _mapController.move(camera.center, camera.zoom - 1);
             },
             child: const Icon(Icons.remove),
           ),

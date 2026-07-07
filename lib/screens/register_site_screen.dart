@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -44,13 +44,13 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   final _phoneController = TextEditingController();
   final _notesController = TextEditingController();
   final _addressController = TextEditingController();
-  
+
   // Demographic controllers for HouseholdInfoStep
   final _malesController = TextEditingController();
   final _femalesController = TextEditingController();
   final _pensionersController = TextEditingController();
   final _chronicController = TextEditingController();
-  
+
   // Additional controllers used by SiteInfoStep
   final _siteCodeController = TextEditingController();
   final _provinceController = TextEditingController();
@@ -95,12 +95,12 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     _phoneController.dispose();
     _notesController.dispose();
     _addressController.dispose();
-    
+
     _malesController.dispose();
     _femalesController.dispose();
     _pensionersController.dispose();
     _chronicController.dispose();
-    
+
     _siteCodeController.dispose();
     _provinceController.dispose();
     _districtController.dispose();
@@ -135,7 +135,8 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
         permission = await Geolocator.requestPermission();
       }
 
-      if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
         setState(() {
           _gpsLoading = false;
           _gpsStatus = 'Location permission was not granted.';
@@ -148,7 +149,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           accuracy: LocationAccuracy.high,
         ),
       );
-      final placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
       final place = placemarks.isNotEmpty ? placemarks.first : null;
       final addressParts = [
         place?.street,
@@ -179,14 +183,20 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
 
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      final picked = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
       if (picked == null) {
         setState(() => _photoLoading = false);
         return;
       }
 
       final appDir = await getApplicationDocumentsDirectory();
-      final targetPath = p.join(appDir.path, '${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}');
+      final targetPath = p.join(
+        appDir.path,
+        '${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}',
+      );
       final savedFile = await File(picked.path).copy(targetPath);
 
       setState(() {
@@ -196,20 +206,28 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _photoLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo capture failed.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Photo capture failed.')));
     }
   }
 
   Future<void> _openOsmMap() async {
     if (_latitude == null || _longitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Capture GPS first.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Capture GPS first.')));
       return;
     }
 
-    final url = Uri.parse('https://www.openstreetmap.org/?mlat=$_latitude&mlon=$_longitude&zoom=16');
+    final url = Uri.parse(
+      'https://www.openstreetmap.org/?mlat=$_latitude&mlon=$_longitude&zoom=16',
+    );
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open OpenStreetMap.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open OpenStreetMap.')),
+      );
     }
   }
 
@@ -233,45 +251,65 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
         return true;
       case 1:
         if (_latitude == null || _longitude == null) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GPS location is required.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('GPS location is required.')),
+          );
           return false;
         }
         return true;
       case 2:
         if (_photoPath == null) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Capture at least one site photo.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Capture at least one site photo.')),
+          );
           return false;
         }
         return true;
       case 3:
-        if (_nameController.text.trim().isEmpty || _villageController.text.trim().isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Site name and village are required.')));
+        if (_nameController.text.trim().isEmpty ||
+            _villageController.text.trim().isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Site name and village are required.'),
+            ),
+          );
           return false;
         }
         return true;
       case 4:
-        if (_householdHeadController.text.trim().isEmpty || _householdSizeController.text.trim().isEmpty) {
+        if (_householdHeadController.text.trim().isEmpty ||
+            _householdSizeController.text.trim().isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Household head and size are required.')),
+            const SnackBar(
+              content: Text('Household head and size are required.'),
+            ),
           );
           return false;
         }
-        
+
         final size = int.tryParse(_householdSizeController.text.trim()) ?? 0;
         final males = int.tryParse(_malesController.text.trim()) ?? 0;
         final females = int.tryParse(_femalesController.text.trim()) ?? 0;
         final pensioners = int.tryParse(_pensionersController.text.trim()) ?? 0;
         final chronic = int.tryParse(_chronicController.text.trim()) ?? 0;
-        
+
         if (males + females > size) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Males + Females cannot exceed total household size.')),
+            const SnackBar(
+              content: Text(
+                'Males + Females cannot exceed total household size.',
+              ),
+            ),
           );
           return false;
         }
         if (pensioners > size || chronic > size) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Pensioners or chronic members cannot exceed household size.')),
+            const SnackBar(
+              content: Text(
+                'Pensioners or chronic members cannot exceed household size.',
+              ),
+            ),
           );
           return false;
         }
@@ -299,8 +337,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     final females = int.tryParse(_femalesController.text.trim());
     final pensioners = int.tryParse(_pensionersController.text.trim());
     final chronic = int.tryParse(_chronicController.text.trim());
-    final distanceFromLandmark = double.tryParse(_distanceController.text.trim());
-    
+    final distanceFromLandmark = double.tryParse(
+      _distanceController.text.trim(),
+    );
+
     final site = Site(
       siteCode: _siteCodeController.text,
       name: _nameController.text.trim(),
@@ -316,18 +356,30 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       imagePath: _photoPath,
       latitude: _latitude,
       longitude: _longitude,
-      address: _addressController.text.trim().isNotEmpty ? _addressController.text.trim() : null,
-      landmark: _landmarkController.text.trim().isEmpty ? null : _landmarkController.text.trim(),
-      description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-      householdHead: _householdHeadController.text.trim().isEmpty ? null : _householdHeadController.text.trim(),
+      address: _addressController.text.trim().isNotEmpty
+          ? _addressController.text.trim()
+          : null,
+      landmark: _landmarkController.text.trim().isEmpty
+          ? null
+          : _landmarkController.text.trim(),
+      description: _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim(),
+      householdHead: _householdHeadController.text.trim().isEmpty
+          ? null
+          : _householdHeadController.text.trim(),
       householdSize: householdSize,
       males: males,
       females: females,
       pensioners: pensioners,
       chronicMembers: chronic,
-      phoneNumber: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      phoneNumber: _phoneController.text.trim().isEmpty
+          ? null
+          : _phoneController.text.trim(),
       services: _services.isEmpty ? null : _services.join(', '),
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      notes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
       distanceFromLandmark: distanceFromLandmark,
       directions: _directionsController.text.trim(),
     );
@@ -345,7 +397,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Register New Site'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.maybePop(context),
+        ),
       ),
       body: SafeArea(
         child: Padding(
@@ -360,7 +415,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
                   color: AppColors.primary,
                 ),
                 const SizedBox(height: 10),
-                Text('Step ${_currentStep + 1} of $_stepCount', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  'Step ${_currentStep + 1} of $_stepCount',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 12),
                 Expanded(child: _buildStep()),
                 const SizedBox(height: 12),
@@ -376,7 +434,9 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
                     if (_currentStep > 0) const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: _currentStep == _stepCount - 1 ? _saveSite : _nextStep,
+                        onPressed: _currentStep == _stepCount - 1
+                            ? _saveSite
+                            : _nextStep,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -385,9 +445,16 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
-                            : Text(_currentStep == _stepCount - 1 ? 'Save Site' : 'Continue'),
+                            : Text(
+                                _currentStep == _stepCount - 1
+                                    ? 'Save Site'
+                                    : 'Continue',
+                              ),
                       ),
                     ),
                   ],

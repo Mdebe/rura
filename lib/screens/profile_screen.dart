@@ -1,15 +1,13 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
- import 'package:file_selector/file_selector.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../database/db_helper.dart';
-import '../models/site.dart';
-import '../models/user.dart';
+
 import '../providers/auth_provider.dart';
 import '../services/sync_service.dart';
 import 'profile_edit_screen.dart';
@@ -24,7 +22,11 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   String version = "";
-  Map<String, int> _stats = {'totalSites': 0, 'gpsCaptured': 0, 'pendingSync': 0};
+  Map<String, int> _stats = {
+    'totalSites': 0,
+    'gpsCaptured': 0,
+    'pendingSync': 0,
+  };
   String _dbSize = "Loading...";
   bool _loadingStats = true;
   bool _syncing = false;
@@ -37,11 +39,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadAllData() async {
-    await Future.wait([
-      _loadVersion(),
-      _loadStats(),
-      _loadDbSize(),
-    ]);
+    await Future.wait([_loadVersion(), _loadStats(), _loadDbSize()]);
     if (mounted) setState(() => _loadingStats = false);
   }
 
@@ -65,12 +63,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showMessage(String message, {Color? color}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
   Future<void> _syncData() async {
@@ -81,7 +76,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+    if (connectivity.contains(ConnectivityResult.none) ||
+        connectivity.isEmpty) {
       _showMessage('No internet connection', color: Colors.orange);
       return;
     }
@@ -98,7 +94,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } on FirebaseException catch (e) {
       if (!mounted) return;
       if (e.code == 'permission-denied') {
-        _showMessage('Permission denied. Check Firestore rules.', color: Colors.red);
+        _showMessage(
+          'Permission denied. Check Firestore rules.',
+          color: Colors.red,
+        );
       } else {
         _showMessage('Sync failed: ${e.message}', color: Colors.red);
       }
@@ -119,7 +118,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await Share.shareXFiles([XFile(path)], text: 'GeoRura Sites Export');
     } catch (error) {
       if (!mounted) return;
-      _showMessage('Excel export failed: ${error.toString()}', color: Colors.red);
+      _showMessage(
+        'Excel export failed: ${error.toString()}',
+        color: Colors.red,
+      );
     }
   }
 
@@ -136,38 +138,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
- 
+  Future<void> _importFromCsv() async {
+    setState(() => _importing = true);
+    try {
+      // Define CSV file type
+      const XTypeGroup csvTypeGroup = XTypeGroup(
+        label: 'CSV',
+        extensions: <String>['csv'],
+        mimeTypes: <String>['text/csv'],
+      );
 
-Future<void> _importFromCsv() async {
-  setState(() => _importing = true);
-  try {
-    // Define CSV file type
-    const XTypeGroup csvTypeGroup = XTypeGroup(
-      label: 'CSV',
-      extensions: <String>['csv'],
-      mimeTypes: <String>['text/csv'],
-    );
+      final XFile? file = await openFile(
+        acceptedTypeGroups: <XTypeGroup>[csvTypeGroup],
+      );
 
-    final XFile? file = await openFile(acceptedTypeGroups: <XTypeGroup>[csvTypeGroup]);
+      if (file == null) {
+        if (!mounted) return;
+        _showMessage('No file selected', color: Colors.orange);
+        return;
+      }
 
-    if (file == null) {
+      _showMessage('Importing CSV...');
+      final count = await DBHelper.instance.importSitesFromCsv(file.path);
       if (!mounted) return;
-      _showMessage('No file selected', color: Colors.orange);
-      return;
+      _showMessage('Imported $count sites successfully', color: Colors.green);
+      await _loadStats();
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage('CSV import failed: $e', color: Colors.red);
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
-
-    _showMessage('Importing CSV...');
-    final count = await DBHelper.instance.importSitesFromCsv(file.path);
-    if (!mounted) return;
-    _showMessage('Imported $count sites successfully', color: Colors.green);
-    await _loadStats();
-  } catch (e) {
-    if (!mounted) return;
-    _showMessage('CSV import failed: $e', color: Colors.red);
-  } finally {
-    if (mounted) setState(() => _importing = false);
   }
-}
+
   Future<void> _exportDatabase() async {
     try {
       final path = await DBHelper.instance.exportDatabase();
@@ -201,7 +204,10 @@ Future<void> _importFromCsv() async {
         return;
       }
       if (!mounted) return;
-      _showMessage('Database restored from backup: $restoredPath', color: Colors.green);
+      _showMessage(
+        'Database restored from backup: $restoredPath',
+        color: Colors.green,
+      );
       _loadAllData();
     } catch (error) {
       if (!mounted) return;
@@ -255,7 +261,7 @@ Future<void> _importFromCsv() async {
   @override
   Widget build(BuildContext context) {
     final pendingCount = _stats['pendingSync'] ?? 0;
-    
+
     return Consumer<AuthProvider>(
       builder: (context, auth, child) {
         final user = auth.currentUser;
@@ -289,9 +295,7 @@ Future<void> _importFromCsv() async {
                         user == null
                             ? 'No account details available'
                             : '${user.role} • ${user.phone}',
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                        ),
+                        style: TextStyle(color: Colors.grey.shade600),
                       ),
                       if (user?.email != null) ...[
                         const SizedBox(height: 2),
@@ -307,19 +311,24 @@ Future<void> _importFromCsv() async {
                       FilledButton.icon(
                         onPressed: () async {
                           final messenger = ScaffoldMessenger.of(context);
-                          final updated = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
-                          );
+                          final updated = await Navigator.of(context)
+                              .push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) => const ProfileEditScreen(),
+                                ),
+                              );
                           if (!mounted) return;
                           if (updated == true) {
                             messenger.showSnackBar(
-                              const SnackBar(content: Text('Profile updated successfully.')),
+                              const SnackBar(
+                                content: Text('Profile updated successfully.'),
+                              ),
                             );
                           }
                         },
                         icon: const Icon(Icons.edit),
                         label: const Text("Edit Profile"),
-                      )
+                      ),
                     ],
                   ),
                 ),
@@ -333,24 +342,51 @@ Future<void> _importFromCsv() async {
                       leading: const Icon(Icons.home_work),
                       title: const Text("Sites Registered"),
                       trailing: _loadingStats
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Text("${_stats['totalSites']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              "${_stats['totalSites']}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                     const Divider(),
                     ListTile(
                       leading: const Icon(Icons.location_on),
                       title: const Text("GPS Captured"),
                       trailing: _loadingStats
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Text("${_stats['gpsCaptured']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              "${_stats['gpsCaptured']}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                     const Divider(),
                     ListTile(
-                      leading: Icon(Icons.cloud_upload, color: pendingCount > 0 ? Colors.orange : Colors.green),
+                      leading: Icon(
+                        Icons.cloud_upload,
+                        color: pendingCount > 0 ? Colors.orange : Colors.green,
+                      ),
                       title: const Text("Pending Sync"),
-                      subtitle: Text(pendingCount > 0 ? 'Tap to sync now' : 'All synced'),
+                      subtitle: Text(
+                        pendingCount > 0 ? 'Tap to sync now' : 'All synced',
+                      ),
                       trailing: _loadingStats
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -358,7 +394,9 @@ Future<void> _importFromCsv() async {
                                   "$pendingCount",
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: pendingCount > 0 ? Colors.orange : Colors.green,
+                                    color: pendingCount > 0
+                                        ? Colors.orange
+                                        : Colors.green,
                                   ),
                                 ),
                                 if (pendingCount > 0) ...[
@@ -367,10 +405,15 @@ Future<void> _importFromCsv() async {
                                       ? const SizedBox(
                                           width: 20,
                                           height: 20,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
                                         )
                                       : IconButton(
-                                          icon: const Icon(Icons.sync, color: Colors.orange),
+                                          icon: const Icon(
+                                            Icons.sync,
+                                            color: Colors.orange,
+                                          ),
                                           onPressed: _syncData,
                                         ),
                                 ],
@@ -389,9 +432,17 @@ Future<void> _importFromCsv() async {
                     ListTile(
                       leading: const Icon(Icons.sync),
                       title: const Text("Sync Data"),
-                      subtitle: Text(pendingCount > 0 ? 'Upload $pendingCount unsynced records' : 'All data synced'),
+                      subtitle: Text(
+                        pendingCount > 0
+                            ? 'Upload $pendingCount unsynced records'
+                            : 'All data synced',
+                      ),
                       trailing: _syncing
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.chevron_right),
                       onTap: _syncing ? null : _syncData,
                     ),
@@ -406,7 +457,11 @@ Future<void> _importFromCsv() async {
                     const Divider(),
                     ListTile(
                       leading: _importing
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.upload_file),
                       title: const Text("Import from CSV"),
                       subtitle: const Text("Add sites from CSV file"),
@@ -439,7 +494,10 @@ Future<void> _importFromCsv() async {
                 Card(
                   color: Colors.blue.shade50,
                   child: ListTile(
-                    leading: const Icon(Icons.admin_panel_settings, color: Colors.blue),
+                    leading: const Icon(
+                      Icons.admin_panel_settings,
+                      color: Colors.blue,
+                    ),
                     title: const Text("Admin Dashboard"),
                     subtitle: const Text("Manage users and system settings"),
                     trailing: const Icon(Icons.chevron_right),
@@ -514,9 +572,7 @@ Future<void> _importFromCsv() async {
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.red,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () async {
                   if (!mounted) return;
                   await context.read<AuthProvider>().logout();
@@ -537,10 +593,7 @@ Future<void> _importFromCsv() async {
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 18,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
       ),
     );
   }

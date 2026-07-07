@@ -11,11 +11,7 @@ class HouseholdDetailsScreen extends StatelessWidget {
   final Site site;
   final VoidCallback? onEdit;
 
-  const HouseholdDetailsScreen({
-    super.key,
-    required this.site,
-    this.onEdit,
-  });
+  const HouseholdDetailsScreen({super.key, required this.site, this.onEdit});
 
   Widget _detailTile(
     IconData icon,
@@ -64,12 +60,12 @@ class HouseholdDetailsScreen extends StatelessWidget {
                 tooltip: 'Copy',
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: value));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$label copied')),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$label copied')));
                 },
               ),
-            if (trailing != null) trailing,
+            ?trailing,
           ],
         ),
       ),
@@ -85,10 +81,7 @@ class HouseholdDetailsScreen extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -145,10 +138,7 @@ class HouseholdDetailsScreen extends StatelessWidget {
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(18), child: child),
     );
   }
 
@@ -156,7 +146,9 @@ class HouseholdDetailsScreen extends StatelessWidget {
     if (site.latitude == null || site.longitude == null) return;
     final lat = site.latitude!;
     final lng = site.longitude!;
-    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -166,7 +158,9 @@ class HouseholdDetailsScreen extends StatelessWidget {
     if (site.latitude == null || site.longitude == null) return;
     final lat = site.latitude!;
     final lng = site.longitude!;
-    final uri = Uri.parse('https://www.openstreetmap.org/?mlat=$lat&mlon=$lng#map=18/$lat/$lng');
+    final uri = Uri.parse(
+      'https://www.openstreetmap.org/?mlat=$lat&mlon=$lng#map=18/$lat/$lng',
+    );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -274,7 +268,11 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 title: const Text('SMS'),
                 onTap: () {
                   Navigator.pop(context);
-                  launchUrl(Uri.parse('sms:${site.phoneNumber}?body=${Uri.encodeComponent(text)}'));
+                  launchUrl(
+                    Uri.parse(
+                      'sms:${site.phoneNumber}?body=${Uri.encodeComponent(text)}',
+                    ),
+                  );
                 },
               ),
             if (site.phoneNumber?.isNotEmpty == true)
@@ -283,8 +281,15 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 title: const Text('WhatsApp'),
                 onTap: () {
                   Navigator.pop(context);
-                  final phone = site.phoneNumber!.replaceAll(RegExp(r'[^\d]'), '');
-                  launchUrl(Uri.parse('https://wa.me/$phone?text=${Uri.encodeComponent(text)}'));
+                  final phone = site.phoneNumber!.replaceAll(
+                    RegExp(r'[^\d]'),
+                    '',
+                  );
+                  launchUrl(
+                    Uri.parse(
+                      'https://wa.me/$phone?text=${Uri.encodeComponent(text)}',
+                    ),
+                  );
                 },
               ),
             ListTile(
@@ -292,10 +297,13 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
               title: const Text('Email'),
               onTap: () {
                 Navigator.pop(context);
-                launchUrl(Uri(
-                  scheme: 'mailto',
-                  query: 'subject=Household: ${site.name}&body=${Uri.encodeComponent(text)}',
-                ));
+                launchUrl(
+                  Uri(
+                    scheme: 'mailto',
+                    query:
+                        'subject=Household: ${site.name}&body=${Uri.encodeComponent(text)}',
+                  ),
+                );
               },
             ),
           ],
@@ -350,18 +358,27 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: site.isSynced ? Colors.green.shade100 : Colors.orange.shade100,
+                          color: site.isSynced
+                              ? Colors.green.shade100
+                              : Colors.orange.shade100,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              site.isSynced ? Icons.cloud_done : Icons.cloud_off,
+                              site.isSynced
+                                  ? Icons.cloud_done
+                                  : Icons.cloud_off,
                               size: 16,
-                              color: site.isSynced ? Colors.green.shade800 : Colors.orange.shade800,
+                              color: site.isSynced
+                                  ? Colors.green.shade800
+                                  : Colors.orange.shade800,
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -369,7 +386,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: site.isSynced ? Colors.green.shade800 : Colors.orange.shade800,
+                                color: site.isSynced
+                                    ? Colors.green.shade800
+                                    : Colors.orange.shade800,
                               ),
                             ),
                           ],
@@ -402,9 +421,13 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                           avatar: const Icon(Icons.copy, size: 18),
                           label: const Text('Copy ID'),
                           onPressed: () {
-                            Clipboard.setData(ClipboardData(text: site.firestoreId!));
+                            Clipboard.setData(
+                              ClipboardData(text: site.firestoreId!),
+                            );
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Firestore ID copied')),
+                              const SnackBar(
+                                content: Text('Firestore ID copied'),
+                              ),
                             );
                           },
                         ),
@@ -430,8 +453,18 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _sectionTitle("Household Information", Icons.family_restroom),
-                  _detailTile(Icons.person, "Household Head", site.householdHead ?? "", context: context),
-                  _detailTile(Icons.groups, "Household Size", site.householdSize?.toString() ?? "", context: context),
+                  _detailTile(
+                    Icons.person,
+                    "Household Head",
+                    site.householdHead ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.groups,
+                    "Household Size",
+                    site.householdSize?.toString() ?? "",
+                    context: context,
+                  ),
                   _detailTile(
                     Icons.phone,
                     "Phone Number",
@@ -452,19 +485,66 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _sectionTitle("Administrative Location", Icons.location_on),
-                  _detailTile(Icons.qr_code, "Site Code", site.siteCode, copyable: true, context: context, trailing: IconButton(
-                    icon: const Icon(Icons.qr_code_2, size: 20),
-                    onPressed: () => _showQRCode(context),
-                  )),
-                  _detailTile(Icons.map, "Province", site.province, context: context),
-                  _detailTile(Icons.map, "District", site.district, context: context),
-                  _detailTile(Icons.location_city, "Municipality", site.municipality, context: context),
+                  _detailTile(
+                    Icons.qr_code,
+                    "Site Code",
+                    site.siteCode,
+                    copyable: true,
+                    context: context,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.qr_code_2, size: 20),
+                      onPressed: () => _showQRCode(context),
+                    ),
+                  ),
+                  _detailTile(
+                    Icons.map,
+                    "Province",
+                    site.province,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.map,
+                    "District",
+                    site.district,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.location_city,
+                    "Municipality",
+                    site.municipality,
+                    context: context,
+                  ),
                   _detailTile(Icons.flag, "Ward", site.ward, context: context),
-                  _detailTile(Icons.groups, "Traditional Authority", site.traditionalAuthority, context: context),
-                  _detailTile(Icons.home_work, "Section", site.section, context: context),
-                  _detailTile(Icons.location_city, "Village", site.village, context: context),
-                  _detailTile(Icons.location_pin, "Address", site.address ?? "", context: context),
-                  _detailTile(Icons.place, "Landmark", site.landmark ?? "", context: context),
+                  _detailTile(
+                    Icons.groups,
+                    "Traditional Authority",
+                    site.traditionalAuthority,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.home_work,
+                    "Section",
+                    site.section,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.location_city,
+                    "Village",
+                    site.village,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.location_pin,
+                    "Address",
+                    site.address ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.place,
+                    "Landmark",
+                    site.landmark ?? "",
+                    context: context,
+                  ),
                 ],
               ),
             ),
@@ -479,7 +559,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                     Icons.my_location,
                     "Latitude",
                     site.latitude?.toStringAsFixed(6) ?? "",
-                    onTap: hasGPS ? () => _showNavigationOptions(context) : null,
+                    onTap: hasGPS
+                        ? () => _showNavigationOptions(context)
+                        : null,
                     copyable: hasGPS,
                     context: context,
                   ),
@@ -487,7 +569,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                     Icons.my_location,
                     "Longitude",
                     site.longitude?.toStringAsFixed(6) ?? "",
-                    onTap: hasGPS ? () => _showNavigationOptions(context) : null,
+                    onTap: hasGPS
+                        ? () => _showNavigationOptions(context)
+                        : null,
                     copyable: hasGPS,
                     context: context,
                   ),
@@ -511,7 +595,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 children: [
                   _sectionTitle("Notes", Icons.description),
                   Text(
-                    site.notes?.isEmpty ?? true ? "No notes provided" : site.notes!,
+                    site.notes?.isEmpty ?? true
+                        ? "No notes provided"
+                        : site.notes!,
                     style: const TextStyle(fontSize: 15, height: 1.5),
                   ),
                 ],
@@ -524,10 +610,31 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _sectionTitle("Record Details", Icons.info_outline),
-                  _detailTile(Icons.badge, "Local ID", site.id?.toString() ?? "N/A", context: context),
-                  _detailTile(Icons.cloud, "Firestore ID", site.firestoreId ?? "Not synced", copyable: site.firestoreId != null, context: context),
-                  _detailTile(Icons.image, "Has Image", hasImage ? "Yes" : "No", context: context),
-                  _detailTile(Icons.sync, "Sync Status", site.isSynced ? "Synced to cloud" : "Pending sync", context: context),
+                  _detailTile(
+                    Icons.badge,
+                    "Local ID",
+                    site.id?.toString() ?? "N/A",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.cloud,
+                    "Firestore ID",
+                    site.firestoreId ?? "Not synced",
+                    copyable: site.firestoreId != null,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.image,
+                    "Has Image",
+                    hasImage ? "Yes" : "No",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.sync,
+                    "Sync Status",
+                    site.isSynced ? "Synced to cloud" : "Pending sync",
+                    context: context,
+                  ),
                 ],
               ),
             ),
@@ -549,7 +656,10 @@ class _FullImageScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+      ),
       body: Center(
         child: Hero(
           tag: imagePath,

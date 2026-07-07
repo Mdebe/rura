@@ -88,7 +88,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _registerMode ? 'Register a new field account' : 'Log in to continue',
+                    _registerMode
+                        ? 'Register a new field account'
+                        : 'Log in to continue',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 20),
@@ -100,7 +102,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         prefixIcon: Icon(Icons.person),
                       ),
                       textInputAction: TextInputAction.next,
-                      validator: (value) => value == null || value.trim().isEmpty ? 'Please enter a name' : null,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Please enter a name'
+                          : null,
                     ),
                   if (_registerMode) const SizedBox(height: 16),
                   if (_registerMode)
@@ -112,22 +117,30 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
-                      validator: (value) => value == null || value.trim().isEmpty ? 'Please enter a phone number' : null,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Please enter a phone number'
+                          : null,
                     ),
                   if (_registerMode) const SizedBox(height: 16),
                   if (_registerMode)
                     DropdownButtonFormField<String>(
-                      value: _selectedRole,
+                      initialValue: _selectedRole,
                       decoration: const InputDecoration(
                         labelText: 'Role',
                         prefixIcon: Icon(Icons.badge),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'Enumerator', child: Text('Enumerator')),
+                        DropdownMenuItem(
+                          value: 'Enumerator',
+                          child: Text('Enumerator'),
+                        ),
                         DropdownMenuItem(value: 'Admin', child: Text('Admin')),
                       ],
                       onChanged: (value) {
-                        if (value != null) setState(() => _selectedRole = value);
+                        if (value != null) {
+                          setState(() => _selectedRole = value);
+                        }
                       },
                     ),
                   if (_registerMode) const SizedBox(height: 16),
@@ -185,7 +198,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : Text(_registerMode ? 'Create account' : 'Sign in'),
                   ),
@@ -200,7 +216,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             });
                           },
                     child: Text(
-                      _registerMode ? 'Already have an account? Sign in' : 'Create a new account',
+                      _registerMode
+                          ? 'Already have an account? Sign in'
+                          : 'Create a new account',
                     ),
                   ),
                 ],

@@ -9,7 +9,8 @@ class SyncService {
 
   Future<int> pushToFirebase() async {
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+    if (connectivity.contains(ConnectivityResult.none) ||
+        connectivity.isEmpty) {
       return 0;
     }
 
@@ -40,6 +41,7 @@ class SyncService {
         );
         syncedCount++;
       } catch (e) {
+        // ignore: avoid_print
         print('Sync error for site ${site.id}: $e');
       }
     }
@@ -48,7 +50,8 @@ class SyncService {
 
   Future<int> pullFromFirebase() async {
     final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+    if (connectivity.contains(ConnectivityResult.none) ||
+        connectivity.isEmpty) {
       return 0;
     }
 

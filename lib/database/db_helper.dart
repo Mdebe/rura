@@ -21,8 +21,8 @@ class DBHelper {
   static Future<Database>? _dbFuture;
 
   Future<Database> get database async {
-    if (_db!= null) return _db!;
-    _dbFuture??= _initDb();
+    if (_db != null) return _db!;
+    _dbFuture ??= _initDb();
     _db = await _dbFuture!;
     return _db!;
   }
@@ -50,7 +50,7 @@ class DBHelper {
 
   Future<Directory> _storageDirectory() async {
     final external = await getExternalStorageDirectory();
-    if (external!= null) {
+    if (external != null) {
       return external;
     }
     return getApplicationDocumentsDirectory();
@@ -74,19 +74,26 @@ class DBHelper {
     if (!await file.exists()) throw Exception('File not found: $filePath');
 
     final csvString = await file.readAsString();
-    final List<List<dynamic>> rows = const CsvToListConverter().convert(csvString);
+    final List<List<dynamic>> rows = const CsvToListConverter().convert(
+      csvString,
+    );
 
     if (rows.length <= 1) return 0; // Only header or empty
 
-    final headers = rows.first.map((e) => e.toString().trim().toLowerCase()).toList();
+    final headers = rows.first
+        .map((e) => e.toString().trim().toLowerCase())
+        .toList();
     final db = await database;
     int imported = 0;
+    // ignore: unused_local_variable
     int skipped = 0;
 
     await db.transaction((txn) async {
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty)) continue;
+        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty)) {
+          continue;
+        }
 
         final map = <String, dynamic>{};
         for (int j = 0; j < headers.length && j < row.length; j++) {
@@ -97,40 +104,73 @@ class DBHelper {
           // Skip if required fields missing
           final name = map['name']?.toString().trim();
           final village = map['village']?.toString().trim();
-          if (name == null || name.isEmpty || village == null || village.isEmpty) {
+          if (name == null ||
+              name.isEmpty ||
+              village == null ||
+              village.isEmpty) {
             skipped++;
             continue;
           }
 
           final site = Site(
             name: name,
-            siteCode: map['sitecode']?.toString().trim()?? map['site_code']?.toString().trim()?? '',
-            type: SiteTypeX.fromString(map['type']?.toString()?? 'household'),
+            siteCode:
+                map['sitecode']?.toString().trim() ??
+                map['site_code']?.toString().trim() ??
+                '',
+            type: SiteTypeX.fromString(map['type']?.toString() ?? 'household'),
             village: village,
-            section: map['section']?.toString().trim()?? '',
-            traditionalAuthority: map['traditionalauthority']?.toString().trim()?? map['traditional_authority']?.toString().trim()?? '',
-            ward: map['ward']?.toString().trim()?? '',
-            municipality: map['municipality']?.toString().trim()?? '',
-            district: map['district']?.toString().trim()?? '',
-            province: map['province']?.toString().trim()?? '',
-            householdHead: map['householdhead']?.toString().trim()?? map['household_head']?.toString().trim(),
-            householdSize: int.tryParse(map['householdsize']?.toString()?? map['household_size']?.toString()?? ''),
-            males: int.tryParse(map['males']?.toString()?? ''),
-            females: int.tryParse(map['females']?.toString()?? ''),
-            pensioners: int.tryParse(map['pensioners']?.toString()?? ''),
-            chronicMembers: int.tryParse(map['chronicmembers']?.toString()?? map['chronic_members']?.toString()?? ''),
-            phoneNumber: map['phonenumber']?.toString().trim()?? map['phone_number']?.toString().trim(),
+            section: map['section']?.toString().trim() ?? '',
+            traditionalAuthority:
+                map['traditionalauthority']?.toString().trim() ??
+                map['traditional_authority']?.toString().trim() ??
+                '',
+            ward: map['ward']?.toString().trim() ?? '',
+            municipality: map['municipality']?.toString().trim() ?? '',
+            district: map['district']?.toString().trim() ?? '',
+            province: map['province']?.toString().trim() ?? '',
+            householdHead:
+                map['householdhead']?.toString().trim() ??
+                map['household_head']?.toString().trim(),
+            householdSize: int.tryParse(
+              map['householdsize']?.toString() ??
+                  map['household_size']?.toString() ??
+                  '',
+            ),
+            males: int.tryParse(map['males']?.toString() ?? ''),
+            females: int.tryParse(map['females']?.toString() ?? ''),
+            pensioners: int.tryParse(map['pensioners']?.toString() ?? ''),
+            chronicMembers: int.tryParse(
+              map['chronicmembers']?.toString() ??
+                  map['chronic_members']?.toString() ??
+                  '',
+            ),
+            phoneNumber:
+                map['phonenumber']?.toString().trim() ??
+                map['phone_number']?.toString().trim(),
             address: map['address']?.toString().trim(),
             landmark: map['landmark']?.toString().trim(),
-            distanceFromLandmark: double.tryParse(map['distancefromlandmark']?.toString()?? map['distance_from_landmark']?.toString()?? ''),
-            directions: map['directions']?.toString().trim()?? '',
-            latitude: double.tryParse(map['latitude']?.toString()?? ''),
-            longitude: double.tryParse(map['longitude']?.toString()?? ''),
+            distanceFromLandmark: double.tryParse(
+              map['distancefromlandmark']?.toString() ??
+                  map['distance_from_landmark']?.toString() ??
+                  '',
+            ),
+            directions: map['directions']?.toString().trim() ?? '',
+            latitude: double.tryParse(map['latitude']?.toString() ?? ''),
+            longitude: double.tryParse(map['longitude']?.toString() ?? ''),
             description: map['description']?.toString().trim(),
             services: map['services']?.toString().trim(),
             notes: map['notes']?.toString().trim(),
-            imagePath: map['imagepath']?.toString().trim()?? map['image_path']?.toString().trim(),
-            registeredAt: DateTime.tryParse(map['registeredat']?.toString()?? map['registered_at']?.toString()?? '')?? DateTime.now(),
+            imagePath:
+                map['imagepath']?.toString().trim() ??
+                map['image_path']?.toString().trim(),
+            registeredAt:
+                DateTime.tryParse(
+                  map['registeredat']?.toString() ??
+                      map['registered_at']?.toString() ??
+                      '',
+                ) ??
+                DateTime.now(),
             isSynced: false, // Always 0 for imports
           );
 
@@ -141,13 +181,11 @@ class DBHelper {
           );
           imported++;
         } catch (e) {
-          print('Failed to import row $i: $e');
           skipped++;
         }
       }
     });
 
-    print('CSV Import: $imported imported, $skipped skipped');
     return imported;
   }
 
@@ -157,12 +195,7 @@ class DBHelper {
 
   Future<int> markSiteUnsynced(int id) async {
     final db = await database;
-    return db.update(
-      'sites',
-      {'isSynced': 0},
-      where: 'id =?',
-      whereArgs: [id],
-    );
+    return db.update('sites', {'isSynced': 0}, where: 'id =?', whereArgs: [id]);
   }
 
   Future<List<Site>> getUnsyncedSites() async {
@@ -177,12 +210,7 @@ class DBHelper {
 
   Future<int> markSiteSynced(int id) async {
     final db = await database;
-    return db.update(
-      'sites',
-      {'isSynced': 1},
-      where: 'id =?',
-      whereArgs: [id],
-    );
+    return db.update('sites', {'isSynced': 1}, where: 'id =?', whereArgs: [id]);
   }
 
   Future<String> exportDatabase() async {
@@ -220,14 +248,12 @@ class DBHelper {
   Future<List<String>> getBackupFiles() async {
     final backupDir = await _ensureDirectory(_backupFolderName);
     final files = backupDir
-       .listSync()
-       .whereType<File>()
-       .where((file) => file.path.toLowerCase().endsWith('.db'))
-       .toList();
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.toLowerCase().endsWith('.db'))
+        .toList();
 
-    files.sort(
-      (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
-    );
+    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
 
     return files.map((file) => file.path).toList();
   }
@@ -268,20 +294,24 @@ class DBHelper {
   Future<Map<String, int>> getFieldStats() async {
     final db = await database;
 
-    final totalSites = Sqflite.firstIntValue(
+    final totalSites =
+        Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites'),
-        )??
+        ) ??
         0;
 
-    final gpsCaptured = Sqflite.firstIntValue(
+    final gpsCaptured =
+        Sqflite.firstIntValue(
           await db.rawQuery(
-              'SELECT COUNT(*) FROM sites WHERE latitude IS NOT NULL AND longitude IS NOT NULL'),
-        )??
+            'SELECT COUNT(*) FROM sites WHERE latitude IS NOT NULL AND longitude IS NOT NULL',
+          ),
+        ) ??
         0;
 
-    final pendingSync = Sqflite.firstIntValue(
+    final pendingSync =
+        Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
-        )??
+        ) ??
         0;
 
     return {
@@ -346,13 +376,13 @@ class DBHelper {
       'description',
       'services',
       'notes',
-      'image_path'
+      'image_path',
     ];
     sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
     for (final s in sites) {
       sheet.appendRow([
-        TextCellValue(s.id?.toString()?? ''),
+        TextCellValue(s.id?.toString() ?? ''),
         TextCellValue(s.siteCode),
         TextCellValue(s.name),
         TextCellValue(s.type.name),
@@ -364,23 +394,23 @@ class DBHelper {
         TextCellValue(s.traditionalAuthority),
         TextCellValue(s.village),
         TextCellValue(s.section),
-        TextCellValue(s.householdHead?? ''),
-        TextCellValue(s.householdSize?.toString()?? ''),
-        TextCellValue(s.males?.toString()?? ''),
-        TextCellValue(s.females?.toString()?? ''),
-        TextCellValue(s.pensioners?.toString()?? ''),
-        TextCellValue(s.chronicMembers?.toString()?? ''),
-        TextCellValue(s.phoneNumber?? ''),
-        TextCellValue(s.address?? ''),
-        TextCellValue(s.landmark?? ''),
-        TextCellValue(s.distanceFromLandmark?.toString()?? ''),
+        TextCellValue(s.householdHead ?? ''),
+        TextCellValue(s.householdSize?.toString() ?? ''),
+        TextCellValue(s.males?.toString() ?? ''),
+        TextCellValue(s.females?.toString() ?? ''),
+        TextCellValue(s.pensioners?.toString() ?? ''),
+        TextCellValue(s.chronicMembers?.toString() ?? ''),
+        TextCellValue(s.phoneNumber ?? ''),
+        TextCellValue(s.address ?? ''),
+        TextCellValue(s.landmark ?? ''),
+        TextCellValue(s.distanceFromLandmark?.toString() ?? ''),
         TextCellValue(s.directions),
-        TextCellValue(s.latitude?.toString()?? ''),
-        TextCellValue(s.longitude?.toString()?? ''),
-        TextCellValue(s.description?? ''),
-        TextCellValue(s.services?? ''),
-        TextCellValue(s.notes?? ''),
-        TextCellValue(s.imagePath?? ''),
+        TextCellValue(s.latitude?.toString() ?? ''),
+        TextCellValue(s.longitude?.toString() ?? ''),
+        TextCellValue(s.description ?? ''),
+        TextCellValue(s.services ?? ''),
+        TextCellValue(s.notes ?? ''),
+        TextCellValue(s.imagePath ?? ''),
       ]);
     }
 
@@ -390,7 +420,7 @@ class DBHelper {
       'sites_export_${DateTime.now().millisecondsSinceEpoch}.xlsx',
     );
     final fileBytes = excel.encode();
-    if (fileBytes!= null) {
+    if (fileBytes != null) {
       final file = File(filePath);
       await file.writeAsBytes(fileBytes);
     }
@@ -430,7 +460,7 @@ class DBHelper {
       'description',
       'services',
       'notes',
-      'image_path'
+      'image_path',
     ]);
 
     for (final s in sites) {
@@ -555,11 +585,7 @@ class DBHelper {
     }
   }
 
-  Future<void> _onUpgrade(
-    Database db,
-    int oldVersion,
-    int newVersion,
-  ) async {
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _addColumnIfNotExists(db, 'sites', 'latitude', 'REAL');
       await _addColumnIfNotExists(db, 'sites', 'longitude', 'REAL');
@@ -581,7 +607,12 @@ class DBHelper {
       await _addColumnIfNotExists(db, 'sites', 'ward', 'TEXT');
       await _addColumnIfNotExists(db, 'sites', 'traditional_authority', 'TEXT');
       await _addColumnIfNotExists(db, 'sites', 'section', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'distance_from_landmark', 'REAL');
+      await _addColumnIfNotExists(
+        db,
+        'sites',
+        'distance_from_landmark',
+        'REAL',
+      );
       await _addColumnIfNotExists(db, 'sites', 'directions', 'TEXT');
     }
 
@@ -598,8 +629,12 @@ class DBHelper {
           assigned_area TEXT
         )
       ''');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)',
+      );
     }
 
     if (oldVersion < 5) {
@@ -621,7 +656,10 @@ class DBHelper {
           'email': u['email'],
           'phone': u['phone'],
           'role': u['role'],
-          'createdAt': u['created_at']?? u['createdAt']?? DateTime.now().toIso8601String(),
+          'createdAt':
+              u['created_at'] ??
+              u['createdAt'] ??
+              DateTime.now().toIso8601String(),
           'lastLogin': null,
         });
       }
@@ -629,7 +667,12 @@ class DBHelper {
       await db.execute('DROP TABLE users');
       await db.execute('ALTER TABLE users_new RENAME TO users');
       await db.execute('CREATE INDEX idx_users_role ON users(role)');
-      await _addColumnIfNotExists(db, 'sites', 'isSynced', 'INTEGER NOT NULL DEFAULT 0');
+      await _addColumnIfNotExists(
+        db,
+        'sites',
+        'isSynced',
+        'INTEGER NOT NULL DEFAULT 0',
+      );
     }
 
     if (oldVersion < 6) {
@@ -637,7 +680,9 @@ class DBHelper {
       await _addColumnIfNotExists(db, 'sites', 'females', 'INTEGER');
       await _addColumnIfNotExists(db, 'sites', 'pensioners', 'INTEGER');
       await _addColumnIfNotExists(db, 'sites', 'chronic_members', 'INTEGER');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_synced ON sites(isSynced)');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sites_synced ON sites(isSynced)',
+      );
     }
   }
 
@@ -658,8 +703,8 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: filterRole!= null? 'role =?' : null,
-      whereArgs: filterRole!= null? [filterRole] : null,
+      where: filterRole != null ? 'role =?' : null,
+      whereArgs: filterRole != null ? [filterRole] : null,
       orderBy: 'createdAt DESC',
     );
     return maps.map((e) => AppUser.fromMap(e)).toList();
@@ -726,11 +771,7 @@ class DBHelper {
 
   Future<int> deleteSite(int id) async {
     final db = await database;
-    return db.delete(
-      'sites',
-      where: 'id =?',
-      whereArgs: [id],
-    );
+    return db.delete('sites', where: 'id =?', whereArgs: [id]);
   }
 
   Future<int> deleteAllSites() async {
@@ -785,25 +826,28 @@ class DBHelper {
     final startOfToday = DateTime(now.year, now.month, now.day);
     final startOfWeek = startOfToday.subtract(Duration(days: now.weekday - 1));
 
-    final total = Sqflite.firstIntValue(
+    final total =
+        Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites'),
-        )??
+        ) ??
         0;
 
-    final today = Sqflite.firstIntValue(
+    final today =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfToday.toIso8601String()],
           ),
-        )??
+        ) ??
         0;
 
-    final week = Sqflite.firstIntValue(
+    final week =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfWeek.toIso8601String()],
           ),
-        )??
+        ) ??
         0;
 
     final villageRows = await db.rawQuery('''
@@ -815,10 +859,10 @@ class DBHelper {
 
     final Map<String, int> villageCounts = {};
     for (final row in villageRows) {
-      final village = row['village']?.toString()?? '';
+      final village = row['village']?.toString() ?? '';
       final count = row['cnt'] is int
-         ? row['cnt'] as int
-          : int.tryParse(row['cnt']?.toString()?? '')?? 0;
+          ? row['cnt'] as int
+          : int.tryParse(row['cnt']?.toString() ?? '') ?? 0;
       if (village.isNotEmpty) {
         villageCounts[village] = count;
       }
@@ -832,10 +876,10 @@ class DBHelper {
 
     final Map<SiteType, int> typeCounts = {};
     for (final row in typeRows) {
-      final typeValue = row['type']?.toString()?? '';
+      final typeValue = row['type']?.toString() ?? '';
       final typeCount = row['cnt'] is int
-         ? row['cnt'] as int
-          : int.tryParse(row['cnt']?.toString()?? '')?? 0;
+          ? row['cnt'] as int
+          : int.tryParse(row['cnt']?.toString() ?? '') ?? 0;
       typeCounts[SiteTypeX.fromString(typeValue)] = typeCount;
     }
 
@@ -856,18 +900,22 @@ class DBHelper {
   Future<void> seedIfEmpty() async {
     final existing = await getAllSites(limit: 1);
 
-    final userCount = Sqflite.firstIntValue(
-            await (await database).rawQuery('SELECT COUNT(*) FROM users'))??
+    final userCount =
+        Sqflite.firstIntValue(
+          await (await database).rawQuery('SELECT COUNT(*) FROM users'),
+        ) ??
         0;
 
     if (userCount == 0) {
-      await insertUser(AppUser(
-        name: 'Admin User',
-        email: 'admin@email.com',
-        phone: '0000000000',
-        role: 'Admin',
-        createdAt: DateTime.now(),
-      ));
+      await insertUser(
+        AppUser(
+          name: 'Admin User',
+          email: 'admin@email.com',
+          phone: '0000000000',
+          role: 'Admin',
+          createdAt: DateTime.now(),
+        ),
+      );
     }
 
     if (existing.isNotEmpty) return;
