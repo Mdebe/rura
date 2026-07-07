@@ -16,6 +16,7 @@ class AuthProvider with ChangeNotifier {
   User? _firebaseUser;
   bool _isLoaded = false;
   bool _hasAcceptedTerms = false;
+  bool _isRegistering = false; // Flag to prevent listener interference
 
   AppUser? get currentUser => _currentUser;
   User? get firebaseUser => _firebaseUser;
@@ -80,6 +81,12 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
+    // Skip listener logic during registration to avoid race condition
+    if (_isRegistering) {
+      _firebaseUser = firebaseUser;
+      return;
+    }
+
     _firebaseUser = firebaseUser;
     if (firebaseUser != null) {
       try {
@@ -184,6 +191,7 @@ class AuthProvider with ChangeNotifier {
     required String role,
   }) async {
     UserCredential? cred;
+    _isRegistering = true; // Block authStateChanges listener
     try {
       cred = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -214,19 +222,23 @@ class AuthProvider with ChangeNotifier {
       await DBHelper.instance.insertUser(user);
       await _firebaseAuth.signOut();
 
+      _isRegistering = false;
       return null;
     } on FirebaseAuthException catch (e) {
+      _isRegistering = false;
       try {
         await cred?.user?.delete();
       } catch (_) {}
       return _handleFirebaseError(e);
     } on TimeoutException {
+      _isRegistering = false;
       // User created in Auth but Firestore failed - delete the auth user
       try {
         await cred?.user?.delete();
       } catch (_) {}
       return 'Network timeout. Please check your connection and try again.';
     } catch (e) {
+      _isRegistering = false;
       try {
         await cred?.user?.delete();
       } catch (_) {}

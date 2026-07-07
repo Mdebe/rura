@@ -38,35 +38,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final auth = context.read<AuthProvider>();
     final error = await auth.login(
-      email: _emailController.text,
+      email: _emailController.text.trim(),
       password: _passwordController.text,
     );
 
+    if (!mounted) return;
+
+    setState(() {
+      _loading = false;
+    });
+
     if (error != null) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _errorMessage = error;
-        });
-      }
+      setState(() {
+        _errorMessage = error;
+      });
       return;
     }
 
     // Login success - check terms acceptance
-    if (!mounted) return;
-
     if (!auth.hasAcceptedTerms) {
       final accepted = await _showTermsDialog();
+      if (!mounted) return;
+
       if (!accepted) {
         await auth.logout();
-        if (mounted) setState(() => _loading = false);
         return;
       }
       await auth.acceptTerms();
     }
 
-    // AuthGate handles navigation - just stop loading
-    if (mounted) setState(() => _loading = false);
+    // AuthGate handles navigation - nothing else to do
   }
 
   Future<bool> _showTermsDialog() async {
@@ -259,14 +260,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterScreen(),
-                          ),
-                        );
-                      },
+                      onPressed: _loading
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterScreen(),
+                                ),
+                              );
+                            },
                       child: const Text('Create Account'),
                     ),
                   ],
