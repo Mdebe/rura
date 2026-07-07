@@ -6,8 +6,9 @@ import 'package:provider/provider.dart';
 import '../database/db_helper.dart';
 import '../models/site.dart';
 import '../models/user.dart';
+
 import '../providers/auth_provider.dart';
-import '../services/sync_service.dart';
+import '../services/site_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/quick_action_button.dart';
 import '../widgets/recent_registration_tile.dart';
@@ -43,6 +44,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? _errorMessage;
   int _pendingSync = 0;
   DateTime? _lastSyncTime;
+  final _siteService = SiteService();
 
   @override
   bool get wantKeepAlive => true;
@@ -83,7 +85,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     try {
-      // Read provider before async to avoid context across async gaps
       final authUser = context.read<AuthProvider>().currentUser;
 
       final results = await Future.wait([
@@ -102,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _lastSyncTime = fieldStats['lastSyncTime'] != null
             ? DateTime.fromMillisecondsSinceEpoch(fieldStats['lastSyncTime']!)
             : null;
-        _currentUser = authUser; // Use cached value
+        _currentUser = authUser;
         _loading = false;
         _errorMessage = null;
       });
@@ -125,11 +126,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     setState(() => _syncing = true);
     try {
-      final count = await SyncService().pushToFirebase();
+      await _siteService.syncPendingSites();
       await _load();
       if (!mounted) return;
       _showSnack(
-        count > 0 ? 'Synced $count sites to cloud' : 'All sites already synced',
+        _pendingSync > 0 ? 'Synced sites to cloud' : 'All sites already synced',
         isError: false,
       );
     } catch (e) {
