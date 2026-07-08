@@ -37,11 +37,6 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    // ignore: avoid_print
-    print(
-      'AuthWrapper: isLoaded=${auth.isLoaded}, isAuthenticated=${auth.isAuthenticated}, user=${auth.currentUser?.email}',
-    );
-
     if (!auth.isLoaded) {
       return const Scaffold(
         body: Center(
@@ -56,6 +51,7 @@ class AuthWrapper extends StatelessWidget {
         ),
       );
     }
+
     if (!auth.isAuthenticated) return const LoginScreen();
     if (auth.isAdmin) return const AdminScreen();
     if (auth.isEnumerator) return const EnumeratorHome();

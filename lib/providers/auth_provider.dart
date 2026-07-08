@@ -46,31 +46,40 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
     _firebaseUser = firebaseUser;
+    if (firebaseUser == null) {
+      _currentUser = null;
+      _isLoaded = true;
+      notifyListeners();
+      return;
+    }
+
     try {
-      if (firebaseUser != null) {
-        final doc = await _firestore
+      final doc = await _firestore
+          .collection('users')
+          .doc(firebaseUser.uid)
+          .get()
+          .timeout(const Duration(seconds: 5));
+
+      if (doc.exists && doc.data() != null) {
+        _currentUser = AppUser.fromMap(doc.data()!);
+        // Fire and forget - don't await
+        _firestore
             .collection('users')
             .doc(firebaseUser.uid)
-            .get();
-        if (doc.exists && doc.data() != null) {
-          _currentUser = AppUser.fromMap(doc.data()!);
-          await _firestore.collection('users').doc(firebaseUser.uid).update({
-            'lastLogin': FieldValue.serverTimestamp(),
-          });
-        } else {
-          debugPrint('User doc missing for ${firebaseUser.uid}, signing out');
-          await _firebaseAuth.signOut();
-          _currentUser = null;
-        }
+            .update({'lastLogin': FieldValue.serverTimestamp()})
+            .catchError((_) {});
       } else {
+        debugPrint('User doc missing for ${firebaseUser.uid}');
+        await _firebaseAuth.signOut();
         _currentUser = null;
       }
     } catch (e) {
       debugPrint('Auth state error: $e');
+      // On timeout/error, sign out so user sees login
+      await _firebaseAuth.signOut();
       _currentUser = null;
-      // Don't sign out here - user might just be offline
     } finally {
-      _isLoaded = true; // ALWAYS set this
+      _isLoaded = true;
       notifyListeners();
     }
   }
