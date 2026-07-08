@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,11 +18,9 @@ import '../wizard_steps/gps_capture_step.dart';
 import '../wizard_steps/photo_capture_step.dart';
 import '../wizard_steps/site_info_step.dart';
 import '../wizard_steps/household_info_step.dart';
+import '../wizard_steps/services_step.dart';
 import '../wizard_steps/review_step.dart';
 
-/// Wizard shell for registering a new site. Owns all shared state
-/// (controllers, GPS/photo results, current step) and delegates rendering
-/// of each step to a dedicated widget in `wizard_steps/`.
 class RegisterSiteScreen extends StatefulWidget {
   const RegisterSiteScreen({super.key});
 
@@ -30,7 +29,7 @@ class RegisterSiteScreen extends StatefulWidget {
 }
 
 class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
-  static const int _stepCount = 6; // Removed services step
+  static const int _stepCount = 7; // Services step added
   static const int _maxPhotos = 5;
 
   final _formKey = GlobalKey<FormState>();
@@ -69,6 +68,14 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   final unemployedController = TextEditingController();
   final grantRecipientsController = TextEditingController();
 
+  // Services state - FIXED: Use ServiceAvailability objects
+  final List<ServiceAvailability> _selectedServices = [];
+
+  // Road & access data
+  final ValueNotifier<RoadAccess?> _roadAccessNotifier = ValueNotifier(null);
+  final ValueNotifier<LatLng?> _siteLocationNotifier = ValueNotifier(null);
+  final List<LandmarkAccess> _landmarkAccesses = [];
+
   // State
   SiteType _selectedType = SiteType.house;
   int _currentStep = 0;
@@ -95,7 +102,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     super.initState();
     _provinceController.text = 'KwaZulu-Natal';
     _loadNextSiteId();
-    // Default demographic counts to 0
     _malesController.text = '0';
     _femalesController.text = '0';
     _childrenController.text = '0';
@@ -144,11 +150,13 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     employedController.dispose();
     unemployedController.dispose();
     grantRecipientsController.dispose();
+    _roadAccessNotifier.dispose();
+    _siteLocationNotifier.dispose();
     super.dispose();
   }
 
   // ---------------------------------------------------------------------
-  // Actions
+  // Actions - GPS, Photo methods unchanged
   // ---------------------------------------------------------------------
 
   Future<void> _captureLocation() async {
@@ -208,7 +216,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
         _longitude = position.longitude;
         _accuracy = position.accuracy;
         _altitude = position.altitude;
-        _speed = position.speed * 3.6; // m/s to km/h
+        _speed = position.speed * 3.6;
         _heading = position.heading;
         _capturedAt = DateTime.now();
         _addressController.text = resolvedAddress;
@@ -416,6 +424,8 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           return false;
         }
         return true;
+      case 5: // Services step - optional
+        return true;
       default:
         return true;
     }
@@ -486,7 +496,9 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       phoneNumber: _phoneController.text.trim().isEmpty
           ? null
           : _phoneController.text.trim(),
-      services: null, // No services step
+      services: _selectedServices.isEmpty
+          ? null
+          : _selectedServices.map((s) => s.toMap()).toList(),
       notes: _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim(),
@@ -693,6 +705,56 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           unemployedController: unemployedController,
           grantRecipientsController: grantRecipientsController,
         );
+      case 5:
+        return ServicesStep(
+          services: _selectedServices,
+          notesController: _notesController,
+          onToggleService: (String value) {
+            setState(() {
+              final existingIndex = _selectedServices.indexWhere(
+                (s) => s.name == value,
+              );
+              if (existingIndex >= 0) {
+                _selectedServices.removeAt(existingIndex);
+              } else {
+                _selectedServices.add(
+                  ServiceAvailability(
+                    name: value,
+                    available: true,
+                    quality: null,
+                  ),
+                );
+              }
+            });
+          },
+          onRateService: (String service, int rating) {
+            setState(() {
+              final index = _selectedServices.indexWhere(
+                (s) => s.name == service,
+              );
+              if (index >= 0) {
+                _selectedServices[index] = _selectedServices[index].copyWith(
+                  quality: rating,
+                );
+              }
+            });
+          },
+          roadAccessNotifier: _roadAccessNotifier,
+          siteLocationNotifier: _siteLocationNotifier,
+          landmarkAccesses: _landmarkAccesses,
+          onUpdateLandmark: (String landmark, LandmarkAccess updated) {
+            setState(() {
+              final index = _landmarkAccesses.indexWhere(
+                (l) => l.name == landmark,
+              );
+              if (index >= 0) {
+                _landmarkAccesses[index] = updated;
+              } else {
+                _landmarkAccesses.add(updated);
+              }
+            });
+          },
+        );
       default:
         return ReviewStep(
           selectedType: _selectedType,
@@ -713,9 +775,9 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           employedCount: int.tryParse(employedController.text),
           unemployedCount: int.tryParse(unemployedController.text),
           grantRecipients: int.tryParse(grantRecipientsController.text),
-          roadAccess: null, // Not implemented in this wizard
-          landmarkAccesses: const [], // Not implemented in this wizard
-          services: const [], // No services step
+          roadAccess: _roadAccessNotifier.value?.toMap(),
+          landmarkAccesses: _landmarkAccesses.map((l) => l.toMap()).toList(),
+          services: _selectedServices.map((s) => s.toMap()).toList(),
           notes: _notesController.text.trim(),
           photoPaths: _photoPaths,
           siteCode: _siteCodeController.text,

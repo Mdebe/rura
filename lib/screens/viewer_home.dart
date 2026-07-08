@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart' as badges;
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
@@ -21,7 +20,6 @@ class ViewerHome extends StatefulWidget {
 class _ViewerHomeState extends State<ViewerHome> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   int _totalSites = 0;
-  int _unreadNotifications = 0;
   List<Site> _recentSites = [];
   bool _loading = true;
 
@@ -63,13 +61,13 @@ class _ViewerHomeState extends State<ViewerHome> {
     if (user == null) return;
 
     try {
-      final snap = await _firestore
+      await _firestore
           .collection('notifications')
           .where('userId', isEqualTo: user.uid)
           .where('read', isEqualTo: false)
           .get();
 
-      if (mounted) setState(() => _unreadNotifications = snap.docs.length);
+      if (mounted) {}
     } catch (e) {
       debugPrint('Error loading notifications: $e');
     }
@@ -173,7 +171,7 @@ class _ViewerHomeState extends State<ViewerHome> {
                 style: TextStyle(
                   color: Theme.of(
                     context,
-                  ).colorScheme.onPrimaryContainer.withOpacity(0.7),
+                  ).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
                 ),
               ),
               currentAccountPicture: CircleAvatar(
@@ -243,13 +241,13 @@ class _ViewerHomeState extends State<ViewerHome> {
         gradient: LinearGradient(
           colors: [
             Theme.of(context).colorScheme.primary,
-            Theme.of(context).colorScheme.primary.withOpacity(0.8),
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -261,7 +259,7 @@ class _ViewerHomeState extends State<ViewerHome> {
           Text(
             'Welcome back,',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.9),
+              color: Colors.white.withValues(alpha: 0.9),
               fontSize: 14,
             ),
           ),
@@ -278,7 +276,7 @@ class _ViewerHomeState extends State<ViewerHome> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -331,7 +329,7 @@ class _ViewerHomeState extends State<ViewerHome> {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
