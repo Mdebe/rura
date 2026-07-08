@@ -9,10 +9,11 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? leading;
   final bool automaticallyImplyLeading;
   final PreferredSizeWidget? bottom;
-  final VoidCallback? onMenuPressed;
+  final VoidCallback? onMenuPressed; // For drawer hamburger
   final VoidCallback? onRefreshLocation;
-  final bool showMenu;
+  final bool showHamburger; // Changed from showMenu
   final bool showLocationRefresh;
+  final bool showActionsMenu; // Changed from showMenu - this is 3-dot
 
   const GeoRuraAppBar({
     super.key,
@@ -24,8 +25,9 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.bottom,
     this.onMenuPressed,
     this.onRefreshLocation,
-    this.showMenu = false,
+    this.showHamburger = false,
     this.showLocationRefresh = false,
+    this.showActionsMenu = true, // Default true for 3-dot menu
   });
 
   @override
@@ -52,12 +54,12 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
       allActions.addAll(actions!);
     }
 
-    // Add menu if enabled
-    if (showMenu) {
+    // Add 3-dot overflow menu if enabled
+    if (showActionsMenu) {
       allActions.add(
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert_rounded),
-          tooltip: 'Menu',
+          tooltip: 'More options',
           onSelected: (value) => _handleMenuSelection(context, value),
           itemBuilder: (context) => [
             const PopupMenuItem(
@@ -66,6 +68,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.person_outline),
                 title: Text('Profile'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
             const PopupMenuItem(
@@ -74,6 +77,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.settings_outlined),
                 title: Text('Settings'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
             const PopupMenuItem(
@@ -82,6 +86,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.help_outline),
                 title: Text('Help & Support'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
             const PopupMenuDivider(),
@@ -91,6 +96,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.description_outlined),
                 title: Text('Terms & Conditions'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
             const PopupMenuItem(
@@ -99,6 +105,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.privacy_tip_outlined),
                 title: Text('Privacy Policy'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
             const PopupMenuDivider(),
@@ -108,6 +115,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
                 leading: Icon(Icons.info_outline),
                 title: Text('About GeoRura'),
                 contentPadding: EdgeInsets.zero,
+                dense: true,
               ),
             ),
           ],
@@ -121,15 +129,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
       foregroundColor: Colors.white,
       elevation: 0,
       automaticallyImplyLeading: automaticallyImplyLeading,
-      leading:
-          leading ??
-          (showMenu && onMenuPressed != null
-              ? IconButton(
-                  icon: const Icon(Icons.menu_rounded),
-                  tooltip: 'Menu',
-                  onPressed: onMenuPressed,
-                )
-              : null),
+      leading: _buildLeading(context),
       title: Row(
         children: [
           Container(
@@ -195,6 +195,23 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: allActions.isNotEmpty ? allActions : null,
       bottom: bottom,
     );
+  }
+
+  Widget? _buildLeading(BuildContext context) {
+    // Custom leading takes priority
+    if (leading != null) return leading;
+
+    // Show hamburger if enabled
+    if (showHamburger) {
+      return IconButton(
+        icon: const Icon(Icons.menu_rounded),
+        tooltip: 'Menu',
+        onPressed: onMenuPressed ?? () => Scaffold.of(context).openDrawer(),
+      );
+    }
+
+    // Let AppBar handle back button automatically
+    return null;
   }
 
   void _handleMenuSelection(BuildContext context, String value) {
