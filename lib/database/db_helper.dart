@@ -155,6 +155,7 @@ class DBHelper {
             try {
               final decoded = jsonDecode(roadAccessStr);
               if (decoded is Map)
+                // ignore: curly_braces_in_flow_control_structures
                 roadAccess = Map<String, dynamic>.from(decoded);
             } catch (_) {}
           }
@@ -1058,35 +1059,6 @@ class DBHelper {
       if (village.isNotEmpty) {
         villageCounts[village] = count;
       }
-    }
-    Future<Map<String, int>> getFieldStats() async {
-      final db = await database;
-
-      final totalSites =
-          Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM sites'),
-          ) ??
-          0;
-
-      final gpsCaptured =
-          Sqflite.firstIntValue(
-            await db.rawQuery(
-              'SELECT COUNT(*) FROM sites WHERE latitude IS NOT NULL AND longitude IS NOT NULL',
-            ),
-          ) ??
-          0;
-
-      final pendingSync =
-          Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
-          ) ??
-          0;
-
-      return {
-        'totalSites': totalSites,
-        'gpsCaptured': gpsCaptured,
-        'pendingSync': pendingSync,
-      };
     }
 
     final typeRows = await db.rawQuery('''

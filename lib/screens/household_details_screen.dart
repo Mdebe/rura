@@ -1,17 +1,94 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/site.dart';
+import '../database/db_helper.dart';
 
-class HouseholdDetailsScreen extends StatelessWidget {
+class HouseholdDetailsScreen extends StatefulWidget {
   final Site site;
   final VoidCallback? onEdit;
 
   const HouseholdDetailsScreen({super.key, required this.site, this.onEdit});
+
+  @override
+  State<HouseholdDetailsScreen> createState() => _HouseholdDetailsScreenState();
+}
+
+class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
+  late Site _site;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _site = widget.site;
+  }
+
+  Future<void> _syncToFirebase() async {
+    if (_site.isSynced) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Already synced')));
+      return;
+    }
+
+    final connectivity = await Connectivity().checkConnectivity();
+    // ignore: unrelated_type_equality_checks
+    if (connectivity == ConnectivityResult.none) {
+      ScaffoldMessenger.of(
+        // ignore: use_build_context_synchronously
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No internet connection')));
+      return;
+    }
+
+    setState(() => _syncing = true);
+
+    try {
+      final docRef = _site.firestoreId != null
+          ? FirebaseFirestore.instance
+                .collection('sites')
+                .doc(_site.firestoreId)
+          : FirebaseFirestore.instance.collection('sites').doc();
+
+      final updatedSite = _site.copyWith(
+        firestoreId: docRef.id,
+        isSynced: true,
+      );
+
+      await docRef.set(updatedSite.toMap(), SetOptions(merge: true));
+
+      if (_site.id != null) {
+        await DBHelper.instance.updateSite(updatedSite.copyWith(id: _site.id));
+      }
+
+      if (mounted) {
+        setState(() {
+          _site = updatedSite;
+          _syncing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Synced to Firebase'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _syncing = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+      }
+    }
+  }
 
   Widget _detailTile(
     IconData icon,
@@ -89,7 +166,7 @@ class HouseholdDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildImage(BuildContext context) {
-    if (site.imagePath == null || site.imagePath!.isEmpty) {
+    if (_site.imagePath == null || _site.imagePath!.isEmpty) {
       return Container(
         height: 240,
         decoration: BoxDecoration(
@@ -114,16 +191,16 @@ class HouseholdDetailsScreen extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => _FullImageScreen(imagePath: site.imagePath!),
+            builder: (_) => _FullImageScreen(imagePath: _site.imagePath!),
           ),
         );
       },
       child: Hero(
-        tag: site.imagePath!,
+        tag: _site.imagePath!,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: Image.file(
-            File(site.imagePath!),
+            File(_site.imagePath!),
             height: 240,
             width: double.infinity,
             fit: BoxFit.cover,
@@ -143,9 +220,9 @@ class HouseholdDetailsScreen extends StatelessWidget {
   }
 
   Future<void> _launchGoogleMaps() async {
-    if (site.latitude == null || site.longitude == null) return;
-    final lat = site.latitude!;
-    final lng = site.longitude!;
+    if (_site.latitude == null || _site.longitude == null) return;
+    final lat = _site.latitude!;
+    final lng = _site.longitude!;
     final uri = Uri.parse(
       'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
     );
@@ -155,9 +232,9 @@ class HouseholdDetailsScreen extends StatelessWidget {
   }
 
   Future<void> _launchOSM() async {
-    if (site.latitude == null || site.longitude == null) return;
-    final lat = site.latitude!;
-    final lng = site.longitude!;
+    if (_site.latitude == null || _site.longitude == null) return;
+    final lat = _site.latitude!;
+    final lng = _site.longitude!;
     final uri = Uri.parse(
       'https://www.openstreetmap.org/?mlat=$lat&mlon=$lng#map=18/$lat/$lng',
     );
@@ -167,7 +244,7 @@ class HouseholdDetailsScreen extends StatelessWidget {
   }
 
   Future<void> _showNavigationOptions(BuildContext context) async {
-    if (site.latitude == null || site.longitude == null) {
+    if (_site.latitude == null || _site.longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('GPS coordinates not available')),
       );
@@ -205,13 +282,13 @@ class HouseholdDetailsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Site Code: ${site.siteCode}'),
+        title: Text('Site Code: ${_site.siteCode}'),
         content: SizedBox(
           width: 250,
           height: 250,
           child: Center(
             child: QrImageView(
-              data: site.siteCode,
+              data: _site.siteCode,
               version: QrVersions.auto,
               size: 220,
             ),
@@ -228,22 +305,46 @@ class HouseholdDetailsScreen extends StatelessWidget {
   }
 
   String _buildShareText() {
-    final gps = site.latitude != null && site.longitude != null
-        ? '${site.latitude!.toStringAsFixed(6)}, ${site.longitude!.toStringAsFixed(6)}'
+    final gps = _site.latitude != null && _site.longitude != null
+        ? '${_site.latitude!.toStringAsFixed(6)}, ${_site.longitude!.toStringAsFixed(6)}'
         : 'No GPS';
+
+    final servicesText = _site.services?.isNotEmpty == true
+        ? _site.services!
+              .map(
+                (s) =>
+                    '${s['name']}${s['rating'] != null ? ' (${s['rating']}/5)' : ''}',
+              )
+              .join(', ')
+        : 'None';
+
     return '''
 GeoRura Household Record
-Name: ${site.name}
-Code: ${site.siteCode}
-Type: ${site.type.label}
-Head: ${site.householdHead ?? 'N/A'}
-Phone: ${site.phoneNumber ?? 'N/A'}
-Size: ${site.householdSize?.toString() ?? 'N/A'}
-Location: ${site.village}, ${site.ward}, ${site.municipality}
+Name: ${_site.name}
+Code: ${_site.siteCode}
+Type: ${_site.type.label}
+Head: ${_site.householdHead ?? 'N/A'}
+Phone: ${_site.phoneNumber ?? 'N/A'}
+ 
+ 
+ 
+Size: ${_site.householdSize?.toString() ?? 'N/A'}
+Males: ${_site.males ?? 'N/A'}, Females: ${_site.females ?? 'N/A'}
+Children: ${_site.children ?? 'N/A'}, Adults: ${_site.adults ?? 'N/A'}, Pensioners: ${_site.pensioners ?? 'N/A'}
+Chronic Members: ${_site.chronicMembers ?? 'N/A'}
+Income: ${_site.incomeBracket ?? 'N/A'}
+Employed: ${_site.employedCount ?? 'N/A'}, Unemployed: ${_site.unemployedCount ?? 'N/A'}
+Grant Recipients: ${_site.grantRecipients ?? 'N/A'}
+Location: ${_site.village}, ${_site.ward}, ${_site.municipality}
 GPS: $gps
-Address: ${site.address ?? 'N/A'}
-Notes: ${site.notes ?? 'None'}
-Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registeredAt.year}
+Address: ${_site.address ?? 'N/A'}
+Landmark: ${_site.landmark ?? 'N/A'}
+Distance to Landmark: ${_site.distanceFromLandmark?.toStringAsFixed(1) ?? 'N/A'} km
+Directions: ${_site.directions}
+Services: $servicesText
+Notes: ${_site.notes ?? 'None'}
+Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.registeredAt.year}
+ 
 ''';
   }
 
@@ -259,10 +360,10 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
               title: const Text('Share...'),
               onTap: () {
                 Navigator.pop(context);
-                Share.share(text, subject: 'Household: ${site.name}');
+                Share.share(text, subject: 'Household: ${_site.name}');
               },
             ),
-            if (site.phoneNumber?.isNotEmpty == true)
+            if (_site.phoneNumber?.isNotEmpty == true)
               ListTile(
                 leading: const Icon(Icons.sms),
                 title: const Text('SMS'),
@@ -270,18 +371,18 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   Navigator.pop(context);
                   launchUrl(
                     Uri.parse(
-                      'sms:${site.phoneNumber}?body=${Uri.encodeComponent(text)}',
+                      'sms:${_site.phoneNumber}?body=${Uri.encodeComponent(text)}',
                     ),
                   );
                 },
               ),
-            if (site.phoneNumber?.isNotEmpty == true)
+            if (_site.phoneNumber?.isNotEmpty == true)
               ListTile(
                 leading: const Icon(Icons.message),
                 title: const Text('WhatsApp'),
                 onTap: () {
                   Navigator.pop(context);
-                  final phone = site.phoneNumber!.replaceAll(
+                  final phone = _site.phoneNumber!.replaceAll(
                     RegExp(r'[^\d]'),
                     '',
                   );
@@ -301,7 +402,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   Uri(
                     scheme: 'mailto',
                     query:
-                        'subject=Household: ${site.name}&body=${Uri.encodeComponent(text)}',
+                        'subject=Household: ${_site.name}&body=${Uri.encodeComponent(text)}',
                   ),
                 );
               },
@@ -312,25 +413,97 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
     );
   }
 
+  Widget _buildServicesSection() {
+    if (_site.services == null || _site.services!.isEmpty) {
+      return _card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle("Services & Utilities", Icons.electrical_services),
+            const Text(
+              'No services recorded',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle("Services & Utilities", Icons.electrical_services),
+          ..._site.services!.map((service) {
+            final name = service['name'] ?? 'Unknown';
+            final rating = service['rating'];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    size: 20,
+                    color: Colors.green.shade700,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  if (rating != null)
+                    Row(
+                      children: List.generate(
+                        5,
+                        (i) => Icon(
+                          i < rating ? Icons.star : Icons.star_border,
+                          size: 16,
+                          color: Colors.amber,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasGPS = site.latitude != null && site.longitude != null;
-    final hasImage = site.imagePath?.isNotEmpty == true;
+    final hasGPS = _site.latitude != null && _site.longitude != null;
+    final hasImage = _site.imagePath?.isNotEmpty == true;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(site.name),
+        title: Text(_site.name),
         actions: [
+          if (!_site.isSynced)
+            IconButton(
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_upload),
+              tooltip: 'Sync Now',
+              onPressed: _syncing ? null : _syncToFirebase,
+            ),
           IconButton(
             icon: const Icon(Icons.share),
             tooltip: 'Share',
             onPressed: () => _shareVia(context),
           ),
-          if (onEdit != null)
+          if (widget.onEdit != null)
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Edit Household',
-              onPressed: onEdit,
+              onPressed: widget.onEdit,
             ),
         ],
       ),
@@ -350,7 +523,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                     children: [
                       Expanded(
                         child: Text(
-                          site.name,
+                          _site.name,
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -363,7 +536,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: site.isSynced
+                          color: _site.isSynced
                               ? Colors.green.shade100
                               : Colors.orange.shade100,
                           borderRadius: BorderRadius.circular(12),
@@ -372,21 +545,21 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              site.isSynced
+                              _site.isSynced
                                   ? Icons.cloud_done
                                   : Icons.cloud_off,
                               size: 16,
-                              color: site.isSynced
+                              color: _site.isSynced
                                   ? Colors.green.shade800
                                   : Colors.orange.shade800,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              site.isSynced ? 'Synced' : 'Pending',
+                              _site.isSynced ? 'Synced' : 'Pending',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: site.isSynced
+                                color: _site.isSynced
                                     ? Colors.green.shade800
                                     : Colors.orange.shade800,
                               ),
@@ -403,7 +576,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                     children: [
                       Chip(
                         avatar: const Icon(Icons.location_city, size: 18),
-                        label: Text(site.type.label),
+                        label: Text(_site.type.label),
                       ),
                       ActionChip(
                         avatar: const Icon(Icons.qr_code, size: 18),
@@ -416,13 +589,13 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                           label: const Text('Navigate'),
                           onPressed: () => _showNavigationOptions(context),
                         ),
-                      if (site.firestoreId != null)
+                      if (_site.firestoreId != null)
                         ActionChip(
                           avatar: const Icon(Icons.copy, size: 18),
                           label: const Text('Copy ID'),
                           onPressed: () {
                             Clipboard.setData(
-                              ClipboardData(text: site.firestoreId!),
+                              ClipboardData(text: _site.firestoreId!),
                             );
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -435,12 +608,12 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '${site.village}, ${site.ward}',
+                    '${_site.village}, ${_site.ward}',
                     style: const TextStyle(color: Colors.black54, fontSize: 15),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registeredAt.year}",
+                    "Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.registeredAt.year}",
                     style: const TextStyle(color: Colors.black45, fontSize: 13),
                   ),
                 ],
@@ -456,23 +629,103 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.person,
                     "Household Head",
-                    site.householdHead ?? "",
+                    _site.householdHead ?? "",
                     context: context,
                   ),
                   _detailTile(
                     Icons.groups,
                     "Household Size",
-                    site.householdSize?.toString() ?? "",
+                    _site.householdSize?.toString() ?? "",
                     context: context,
                   ),
                   _detailTile(
                     Icons.phone,
                     "Phone Number",
-                    site.phoneNumber ?? "",
-                    onTap: site.phoneNumber?.isNotEmpty == true
-                        ? () => launchUrl(Uri.parse('tel:${site.phoneNumber}'))
+                    _site.phoneNumber ?? "",
+                    onTap: _site.phoneNumber?.isNotEmpty == true
+                        ? () => launchUrl(Uri.parse('tel:${_site.phoneNumber}'))
                         : null,
                     copyable: true,
+                    context: context,
+                  ),
+                ],
+              ),
+            ),
+
+            // Demographics
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle("Demographics", Icons.people),
+                  _detailTile(
+                    Icons.male,
+                    "Males",
+                    _site.males?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.female,
+                    "Females",
+                    _site.females?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.child_care,
+                    "Children",
+                    _site.children?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.person,
+                    "Adults",
+                    _site.adults?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.elderly,
+                    "Pensioners",
+                    _site.pensioners?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.healing,
+                    "Chronic Members",
+                    _site.chronicMembers?.toString() ?? "",
+                    context: context,
+                  ),
+                ],
+              ),
+            ),
+
+            // Employment & Income
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle("Employment & Income", Icons.work_history),
+                  _detailTile(
+                    Icons.attach_money,
+                    "Income Bracket",
+                    _site.incomeBracket ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.work,
+                    "Employed Count",
+                    _site.employedCount?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.work_off,
+                    "Unemployed Count",
+                    _site.unemployedCount?.toString() ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.volunteer_activism,
+                    "Grant Recipients",
+                    _site.grantRecipients?.toString() ?? "",
                     context: context,
                   ),
                 ],
@@ -488,7 +741,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.qr_code,
                     "Site Code",
-                    site.siteCode,
+                    _site.siteCode,
                     copyable: true,
                     context: context,
                     trailing: IconButton(
@@ -499,50 +752,64 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.map,
                     "Province",
-                    site.province,
+                    _site.province,
                     context: context,
                   ),
                   _detailTile(
                     Icons.map,
                     "District",
-                    site.district,
+                    _site.district,
                     context: context,
                   ),
                   _detailTile(
                     Icons.location_city,
                     "Municipality",
-                    site.municipality,
+                    _site.municipality,
                     context: context,
                   ),
-                  _detailTile(Icons.flag, "Ward", site.ward, context: context),
+                  _detailTile(Icons.flag, "Ward", _site.ward, context: context),
                   _detailTile(
                     Icons.groups,
                     "Traditional Authority",
-                    site.traditionalAuthority,
+                    _site.traditionalAuthority,
                     context: context,
                   ),
                   _detailTile(
                     Icons.home_work,
                     "Section",
-                    site.section,
+                    _site.section,
                     context: context,
                   ),
                   _detailTile(
                     Icons.location_city,
                     "Village",
-                    site.village,
+                    _site.village,
                     context: context,
                   ),
                   _detailTile(
                     Icons.location_pin,
                     "Address",
-                    site.address ?? "",
+                    _site.address ?? "",
                     context: context,
                   ),
                   _detailTile(
                     Icons.place,
                     "Landmark",
-                    site.landmark ?? "",
+                    _site.landmark ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.social_distance,
+                    "Distance to Landmark",
+                    _site.distanceFromLandmark != null
+                        ? '${_site.distanceFromLandmark!.toStringAsFixed(1)} km'
+                        : "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.directions,
+                    "Directions",
+                    _site.directions,
                     context: context,
                   ),
                 ],
@@ -558,7 +825,7 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.my_location,
                     "Latitude",
-                    site.latitude?.toStringAsFixed(6) ?? "",
+                    _site.latitude?.toStringAsFixed(6) ?? "",
                     onTap: hasGPS
                         ? () => _showNavigationOptions(context)
                         : null,
@@ -568,11 +835,31 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.my_location,
                     "Longitude",
-                    site.longitude?.toStringAsFixed(6) ?? "",
+                    _site.longitude?.toStringAsFixed(6) ?? "",
                     onTap: hasGPS
                         ? () => _showNavigationOptions(context)
                         : null,
                     copyable: hasGPS,
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.height,
+                    "Altitude",
+                    _site.altitude?.toStringAsFixed(1) ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.speed,
+                    "GPS Accuracy",
+                    _site.accuracy?.toStringAsFixed(1) ?? "",
+                    context: context,
+                  ),
+                  _detailTile(
+                    Icons.access_time,
+                    "Captured At",
+                    _site.capturedAt != null
+                        ? "${_site.capturedAt!.day}/${_site.capturedAt!.month}/${_site.capturedAt!.year} ${_site.capturedAt!.hour}:${_site.capturedAt!.minute.toString().padLeft(2, '0')}"
+                        : "",
                     context: context,
                   ),
                   if (hasGPS)
@@ -588,6 +875,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
               ),
             ),
 
+            // Services & Utilities - NEW SECTION
+            _buildServicesSection(),
+
             // Notes
             _card(
               child: Column(
@@ -595,9 +885,9 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                 children: [
                   _sectionTitle("Notes", Icons.description),
                   Text(
-                    site.notes?.isEmpty ?? true
+                    _site.notes?.isEmpty ?? true
                         ? "No notes provided"
-                        : site.notes!,
+                        : _site.notes!,
                     style: const TextStyle(fontSize: 15, height: 1.5),
                   ),
                 ],
@@ -613,14 +903,14 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.badge,
                     "Local ID",
-                    site.id?.toString() ?? "N/A",
+                    _site.id?.toString() ?? "N/A",
                     context: context,
                   ),
                   _detailTile(
                     Icons.cloud,
                     "Firestore ID",
-                    site.firestoreId ?? "Not synced",
-                    copyable: site.firestoreId != null,
+                    _site.firestoreId ?? "Not synced",
+                    copyable: _site.firestoreId != null,
                     context: context,
                   ),
                   _detailTile(
@@ -632,7 +922,14 @@ Registered: ${site.registeredAt.day}/${site.registeredAt.month}/${site.registere
                   _detailTile(
                     Icons.sync,
                     "Sync Status",
-                    site.isSynced ? "Synced to cloud" : "Pending sync",
+                    _site.isSynced ? "Synced to cloud" : "Pending sync",
+                    context: context,
+                  ),
+
+                  _detailTile(
+                    Icons.description,
+                    "Description",
+                    _site.description ?? "",
                     context: context,
                   ),
                 ],

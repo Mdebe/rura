@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:ruralmap/screens/household_details_screen.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
@@ -143,6 +144,7 @@ class _MapScreenState extends State<MapScreen> {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (_) {
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -159,28 +161,98 @@ class _MapScreenState extends State<MapScreen> {
                   fontWeight: FontWeight.bold,
                   fontSize: 22,
                 ),
+                textAlign: TextAlign.center,
               ),
 
               const SizedBox(height: 8),
 
-              Text(site.village),
+              Text(
+                '${site.village}, ${site.ward}',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
 
               const SizedBox(height: 12),
 
-              Text("Type: ${site.type.label}"),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  site.type.label,
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
 
-              if (site.householdHead != null)
-                Text("Head: ${site.householdHead}"),
+              if (site.householdHead != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.person, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      site.householdHead!,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
 
-              if (site.phoneNumber != null) Text(site.phoneNumber!),
+              if (site.phoneNumber != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.phone, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      site.phoneNumber!,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
 
               const SizedBox(height: 20),
 
-              FilledButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.edit),
-                label: const Text("View Details"),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context); // Close bottom sheet
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => HouseholdDetailsScreen(
+                          site: site,
+                          onEdit: () {
+                            // Optional: handle edit from details screen
+                            Navigator.pop(context); // Close details
+                            // Add your edit logic here, e.g.:
+                            // _showEditDialog(site);
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.visibility),
+                  label: const Text("View Full Details"),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
               ),
+
+              const SizedBox(height: 8),
             ],
           ),
         );

@@ -5,7 +5,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../database/db_helper.dart';
 import '../providers/auth_provider.dart';
@@ -14,6 +13,8 @@ import 'profile_edit_screen.dart';
 import 'admin_screen.dart';
 import 'settings_screen.dart';
 import 'help_screen.dart';
+import 'terms_screen.dart';
+import 'privacy_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -257,13 +258,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _showMessage('Could not open link', color: Colors.red);
-    }
   }
 
   @override
@@ -578,7 +572,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       leading: const Icon(Icons.privacy_tip),
                       title: const Text("Privacy Policy"),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _launchUrl('https://georura.co.za/privacy'),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const PrivacyScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.description),
+                      title: const Text("Terms & Conditions"),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TermsScreen(),
+                          ),
+                        );
+                      },
                     ),
                     const Divider(),
                     ListTile(
