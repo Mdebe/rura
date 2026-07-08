@@ -191,7 +191,7 @@ class AuthProvider with ChangeNotifier {
     required String role,
   }) async {
     UserCredential? cred;
-    _isRegistering = true; // Block authStateChanges listener
+    _isRegistering = true;
     try {
       cred = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -200,28 +200,28 @@ class AuthProvider with ChangeNotifier {
 
       await cred.user?.updateDisplayName(name.trim());
       final uid = cred.user!.uid;
-      final now = DateTime.now();
 
-      final user = AppUser(
-        uid: uid,
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        role: role,
-        createdAt: now,
-        lastLogin: now,
-      );
-
-      // Timeout Firestore write to prevent hanging
+      // Use serverTimestamp instead of DateTime.now() to avoid null issues
       await _firestore
           .collection('users')
           .doc(uid)
-          .set(user.toMap())
+          .set({
+            'uid': uid,
+            'name': name.trim(),
+            'email': email.trim(),
+            'phone': phone.trim(),
+            'role': role,
+            'createdAt': FieldValue.serverTimestamp(),
+            'lastLogin': FieldValue.serverTimestamp(),
+          })
           .timeout(const Duration(seconds: 10));
 
+      // Read back to get actual timestamps, then save locally
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final user = AppUser.fromMap(doc.data()!);
       await DBHelper.instance.insertUser(user);
-      await _firebaseAuth.signOut();
 
+      await _firebaseAuth.signOut();
       _isRegistering = false;
       return null;
     } on FirebaseAuthException catch (e) {
@@ -232,7 +232,6 @@ class AuthProvider with ChangeNotifier {
       return _handleFirebaseError(e);
     } on TimeoutException {
       _isRegistering = false;
-      // User created in Auth but Firestore failed - delete the auth user
       try {
         await cred?.user?.delete();
       } catch (_) {}

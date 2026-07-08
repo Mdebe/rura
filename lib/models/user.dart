@@ -59,7 +59,7 @@ class AppUser {
 
   static DateTime _toDateTime(dynamic value, {DateTime? fallback}) {
     if (value == null) return fallback ?? DateTime.now();
-    if (value is Timestamp) return value.toDate(); // Added this line
+    if (value is Timestamp) return value.toDate(); // FIX: Handle Timestamp
     if (value is DateTime) return value;
     if (value is String) {
       return DateTime.tryParse(value) ?? fallback ?? DateTime.now();
