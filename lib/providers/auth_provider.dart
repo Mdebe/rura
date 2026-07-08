@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:local_auth/local_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../database/db_helper.dart';
@@ -10,26 +10,28 @@ import '../models/user.dart';
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final LocalAuthentication _localAuth = LocalAuthentication();
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   AppUser? _currentUser;
   User? _firebaseUser;
   bool _isLoaded = false;
   bool _hasAcceptedTerms = false;
-  bool _isRegistering = false;
 
   AppUser? get currentUser => _currentUser;
   User? get firebaseUser => _firebaseUser;
   bool get isAuthenticated => _currentUser != null;
   bool get isLoaded => _isLoaded;
   bool get isAdmin => _currentUser?.role == 'Admin';
+  bool get isEnumerator => _currentUser?.role == 'Enumerator';
+  bool get isViewer => _currentUser?.role == 'Viewer';
   bool get hasAcceptedTerms => _hasAcceptedTerms;
 
   AuthProvider() {
+    _loadTermsStatus();
     _firebaseAuth.authStateChanges().listen(_onAuthStateChanged);
   }
 
-  Future<void> loadTermsStatus() async {
+  Future<void> _loadTermsStatus() async {
     final prefs = await SharedPreferences.getInstance();
     _hasAcceptedTerms = prefs.getBool('accepted_terms_v1') ?? false;
     notifyListeners();
@@ -42,85 +44,26 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> checkAuthStatus() async {
-    await loadTermsStatus();
-    _firebaseUser = _firebaseAuth.currentUser;
-    if (_firebaseUser != null) {
-      try {
-        final doc = await _firestore
-            .collection('users')
-            .doc(_firebaseUser!.uid)
-            .get()
-            .timeout(const Duration(seconds: 10));
-        if (doc.exists && doc.data() != null) {
-          _currentUser = AppUser.fromMap(doc.data()!);
-        } else {
-          _currentUser = await DBHelper.instance.getUserByEmail(
-            _firebaseUser!.email!,
-          );
-          if (_currentUser != null) {
-            final updated = _currentUser!.copyWith(uid: _firebaseUser!.uid);
-            await _firestore
-                .collection('users')
-                .doc(_firebaseUser!.uid)
-                .set(updated.toMap())
-                .timeout(const Duration(seconds: 10));
-            await DBHelper.instance.updateUser(updated);
-            _currentUser = updated;
-          }
-        }
-      } catch (e) {
-        debugPrint('Failed to load user: $e');
-        _currentUser = await DBHelper.instance.getUserByEmail(
-          _firebaseUser!.email!,
-        );
-      }
-    }
-    _isLoaded = true;
-    notifyListeners();
-  }
-
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
-    if (_isRegistering) {
-      _firebaseUser = firebaseUser;
-      return;
-    }
-
     _firebaseUser = firebaseUser;
     if (firebaseUser != null) {
       try {
-        final docRef = _firestore.collection('users').doc(firebaseUser.uid);
-        final doc = await docRef.get().timeout(const Duration(seconds: 10));
-
+        final doc = await _firestore
+            .collection('users')
+            .doc(firebaseUser.uid)
+            .get();
         if (doc.exists && doc.data() != null) {
           _currentUser = AppUser.fromMap(doc.data()!);
-          final now = DateTime.now();
-          await docRef
-              .update({'lastLogin': Timestamp.fromDate(now)})
-              .timeout(const Duration(seconds: 10));
-          _currentUser = _currentUser!.copyWith(lastLogin: now);
-          await DBHelper.instance.updateUser(_currentUser!);
+          await _firestore.collection('users').doc(firebaseUser.uid).update({
+            'lastLogin': FieldValue.serverTimestamp(),
+          });
         } else {
-          _currentUser = await DBHelper.instance.getUserByEmail(
-            firebaseUser.email!,
-          );
-          if (_currentUser != null) {
-            final userWithUid = _currentUser!.copyWith(uid: firebaseUser.uid);
-            await docRef
-                .set(userWithUid.toMap())
-                .timeout(const Duration(seconds: 10));
-            await DBHelper.instance.updateUser(userWithUid);
-            _currentUser = userWithUid;
-          } else {
-            await _firebaseAuth.signOut();
-            _currentUser = null;
-          }
+          await _firebaseAuth.signOut();
+          _currentUser = null;
         }
       } catch (e) {
-        debugPrint('Error syncing user: $e');
-        _currentUser = await DBHelper.instance.getUserByEmail(
-          firebaseUser.email!,
-        );
+        debugPrint('Auth state error: $e');
+        _currentUser = null;
       }
     } else {
       _currentUser = null;
@@ -129,151 +72,147 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> login({
+  Future<String?> loginWithEmail({
     required String email,
     required String password,
   }) async {
     try {
-      final cred = await _firebaseAuth.signInWithEmailAndPassword(
+      await _firebaseAuth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
-
-      final uid = cred.user!.uid;
-      final docRef = _firestore.collection('users').doc(uid);
-      final doc = await docRef.get().timeout(const Duration(seconds: 10));
-      final now = DateTime.now();
-
-      if (!doc.exists || doc.data() == null) {
-        final localUser = await DBHelper.instance.getUserByEmail(email.trim());
-        final user =
-            (localUser ??
-                    AppUser(
-                      uid: uid,
-                      name: cred.user?.displayName ?? 'User',
-                      email: email.trim(),
-                      phone: '',
-                      role: 'Enumerator',
-                      createdAt: now,
-                      lastLogin: now,
-                    ))
-                .copyWith(uid: uid, lastLogin: now);
-
-        await docRef.set(user.toMap()).timeout(const Duration(seconds: 10));
-        await DBHelper.instance.insertUser(user);
-        _currentUser = user;
-      } else {
-        _currentUser = AppUser.fromMap(doc.data()!);
-        await docRef
-            .update({'lastLogin': Timestamp.fromDate(now)})
-            .timeout(const Duration(seconds: 10));
-        _currentUser = _currentUser!.copyWith(lastLogin: now);
-        await DBHelper.instance.updateUser(_currentUser!);
-      }
-
-      notifyListeners();
       return null;
     } on FirebaseAuthException catch (e) {
       return _handleFirebaseError(e);
-    } on TimeoutException {
-      return 'Network timeout. Check your connection.';
     } catch (e) {
-      return 'Login failed: ${e.toString()}';
+      return 'Login failed: $e';
     }
   }
 
-  Future<String?> register({
+  Future<String?> signUpWithEmail({
     required String name,
     required String email,
     required String password,
     required String phone,
-    required String role,
   }) async {
     UserCredential? cred;
-    _isRegistering = true;
     try {
       cred = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
-
       await cred.user?.updateDisplayName(name.trim());
       final uid = cred.user!.uid;
 
-      // Write with serverTimestamp
-      await _firestore
-          .collection('users')
-          .doc(uid)
-          .set({
-            'uid': uid,
-            'name': name.trim(),
-            'email': email.trim(),
-            'phone': phone.trim(),
-            'role': role,
-            'createdAt': FieldValue.serverTimestamp(),
-            'lastLogin': FieldValue.serverTimestamp(),
-          })
-          .timeout(const Duration(seconds: 10));
-
-      // Wait for server timestamp to resolve, then read back
-      await Future.delayed(const Duration(milliseconds: 500));
-      final doc = await _firestore.collection('users').doc(uid).get();
-
-      if (!doc.exists || doc.data() == null) {
-        throw Exception('User document not created');
-      }
-
-      final user = AppUser.fromMap(doc.data()!);
-      await DBHelper.instance.insertUser(user);
+      await _firestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': name.trim(),
+        'email': email.trim(),
+        'phone': phone.trim(),
+        'role': 'Viewer',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
 
       await _firebaseAuth.signOut();
-      _isRegistering = false;
       return null;
     } on FirebaseAuthException catch (e) {
-      _isRegistering = false;
       try {
         await cred?.user?.delete();
       } catch (_) {}
       return _handleFirebaseError(e);
-    } on TimeoutException {
-      _isRegistering = false;
-      try {
-        await cred?.user?.delete();
-      } catch (_) {}
-      return 'Network timeout. Please check your connection and try again.';
     } catch (e) {
-      _isRegistering = false;
       try {
         await cred?.user?.delete();
       } catch (_) {}
-      return 'Registration failed: ${e.toString()}';
+      return 'Registration failed: $e';
     }
   }
 
-  Future<bool> authenticateWithBiometrics() async {
+  Future<String?> signInWithGoogle() async {
     try {
-      final canCheck = await _localAuth.canCheckBiometrics;
-      final isDeviceSupported = await _localAuth.isDeviceSupported();
-      if (!canCheck || !isDeviceSupported) return false;
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return 'Sign in cancelled';
 
-      return await _localAuth.authenticate(
-        localizedReason: 'Please authenticate to access your account',
-        options: const AuthenticationOptions(
-          biometricOnly: false,
-          stickyAuth: true,
-        ),
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
       );
+
+      final cred = await _firebaseAuth.signInWithCredential(credential);
+      final uid = cred.user!.uid;
+
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (!doc.exists) {
+        await _firestore.collection('users').doc(uid).set({
+          'uid': uid,
+          'name': cred.user!.displayName ?? 'User',
+          'email': cred.user!.email ?? '',
+          'phone': cred.user!.phoneNumber ?? '',
+          'role': 'Viewer',
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+      }
+      return null;
     } catch (e) {
-      debugPrint('Biometric error: $e');
-      return false;
+      return 'Google sign in failed: $e';
     }
   }
 
-  Future<void> logout() async {
-    await _firebaseAuth.signOut();
-    _currentUser = null;
-    _firebaseUser = null;
-    notifyListeners();
+  Future<String?> signInWithPhone({
+    required String phone,
+    required Function(String) onCodeSent,
+  }) async {
+    try {
+      await _firebaseAuth.verifyPhoneNumber(
+        phoneNumber: phone,
+        verificationCompleted: (cred) async {
+          final res = await _firebaseAuth.signInWithCredential(cred);
+          await _ensureUserDoc(res.user!, phone);
+        },
+        verificationFailed: (e) => throw e,
+        codeSent: (verId, _) => onCodeSent(verId),
+        codeAutoRetrievalTimeout: (_) {},
+      );
+      return null;
+    } catch (e) {
+      return 'Phone auth failed: $e';
+    }
+  }
+
+  Future<String?> verifyPhoneOtp({
+    required String verificationId,
+    required String smsCode,
+  }) async {
+    try {
+      final cred = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode,
+      );
+      final res = await _firebaseAuth.signInWithCredential(cred);
+      await _ensureUserDoc(res.user!, res.user!.phoneNumber ?? '');
+      return null;
+    } catch (e) {
+      return 'Invalid code';
+    }
+  }
+
+  Future<void> _ensureUserDoc(User user, String phone) async {
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    if (!doc.exists) {
+      await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'name': user.displayName ?? 'User',
+        'email': user.email ?? '',
+        'phone': phone,
+        'role': 'Viewer',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   Future<String?> updateProfile({
@@ -363,6 +302,14 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<void> logout() async {
+    await _googleSignIn.signOut();
+    await _firebaseAuth.signOut();
+    _currentUser = null;
+    _firebaseUser = null;
+    notifyListeners();
+  }
+
   String _handleFirebaseError(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
@@ -379,6 +326,8 @@ class AuthProvider with ChangeNotifier {
         return 'Network error. Check your connection';
       case 'too-many-requests':
         return 'Too many attempts. Try again later';
+      case 'invalid-verification-code':
+        return 'Invalid verification code';
       case 'requires-recent-login':
         return 'Please log out and log in again';
       case 'user-disabled':

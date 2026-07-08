@@ -5,7 +5,7 @@ class AppUser {
   final String name;
   final String email;
   final String phone;
-  final String role;
+  final String role; // Viewer, Enumerator, Admin
   final DateTime createdAt;
   final DateTime? lastLogin;
 
@@ -51,35 +51,27 @@ class AppUser {
     };
   }
 
-  static String _toString(dynamic value, {String fallback = ''}) {
-    if (value == null) return fallback;
-    if (value is String) return value;
-    return value.toString();
-  }
-
   static DateTime _toDateTime(dynamic value, {DateTime? fallback}) {
     if (value == null) return fallback ?? DateTime.now();
-    if (value is Timestamp) return value.toDate(); // FIX: Handle Timestamp
+    if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
     if (value is String) {
       return DateTime.tryParse(value) ?? fallback ?? DateTime.now();
     }
-    if (value is int) {
-      return DateTime.fromMillisecondsSinceEpoch(value);
-    }
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
     return fallback ?? DateTime.now();
   }
 
   factory AppUser.fromMap(Map<String, dynamic> map) {
     return AppUser(
-      uid: _toString(map['uid']),
-      name: _toString(map['name'], fallback: 'Enumerator'),
-      email: _toString(map['email']),
-      phone: _toString(map['phone']),
-      role: _toString(map['role'], fallback: 'Enumerator'),
+      uid: map['uid'] ?? '',
+      name: map['name'] ?? 'User',
+      email: map['email'] ?? '',
+      phone: map['phone'] ?? '',
+      role: map['role'] ?? 'Viewer',
       createdAt: _toDateTime(map['createdAt']),
       lastLogin: map['lastLogin'] != null
-          ? _toDateTime(map['lastLogin'], fallback: null)
+          ? _toDateTime(map['lastLogin'])
           : null,
     );
   }

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:ruralmap/screens/privacy_policy_screen.dart';
-import 'package:ruralmap/screens/terms_screen.dart';
 import '../providers/auth_provider.dart';
-import '../theme/app_theme.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,264 +14,251 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+
   bool _loading = false;
-  bool _obscurePassword = true;
-  String? _errorMessage;
+  bool _obscure = true;
+  bool _phoneMode = false;
+  bool _otpSent = false;
+  String? _verificationId;
+  String? _error;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneCtrl.dispose();
+    _otpCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _loginEmail() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
       _loading = true;
-      _errorMessage = null;
+      _error = null;
     });
-
-    final auth = context.read<AuthProvider>();
-    final error = await auth.login(
-      email: _emailController.text.trim(),
+    final err = await context.read<AuthProvider>().loginWithEmail(
+      email: _emailController.text,
       password: _passwordController.text,
     );
-
     if (!mounted) return;
-
     setState(() {
       _loading = false;
+      if (err != null) _error = err;
     });
-
-    if (error != null) {
-      setState(() {
-        _errorMessage = error;
-      });
-      return;
-    }
-
-    // Login success - check terms acceptance
-    if (!auth.hasAcceptedTerms) {
-      final accepted = await _showTermsDialog();
-      if (!mounted) return;
-
-      if (!accepted) {
-        await auth.logout();
-        return;
-      }
-      await auth.acceptTerms();
-    }
-
-    // AuthGate handles navigation - nothing else to do
   }
 
-  Future<bool> _showTermsDialog() async {
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Terms and Privacy'),
-            content: const Text(
-              'By using GeoRura you agree to our Terms and Conditions and Privacy Policy. '
-              'We collect location and household data for municipal planning only.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.push(
-                  ctx,
-                  MaterialPageRoute(builder: (_) => const TermsScreen()),
-                ),
-                child: const Text('View Terms'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.push(
-                  ctx,
-                  MaterialPageRoute(
-                    builder: (_) => const PrivacyPolicyScreen(),
-                  ),
-                ),
-                child: const Text('View Privacy'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Accept'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  Future<void> _loginGoogle() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final err = await context.read<AuthProvider>().signInWithGoogle();
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (err != null) _error = err;
+    });
+  }
+
+  Future<void> _sendOtp() async {
+    if (_phoneCtrl.text.isEmpty) {
+      setState(() => _error = 'Enter phone number');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final err = await context.read<AuthProvider>().signInWithPhone(
+      phone: _phoneCtrl.text,
+      onCodeSent: (verId) {
+        if (mounted) {
+          setState(() {
+            _verificationId = verId;
+            _otpSent = true;
+            _loading = false;
+          });
+        }
+      },
+    );
+    if (err != null && mounted) {
+      setState(() {
+        _loading = false;
+        _error = err;
+      });
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    if (_otpCtrl.text.isEmpty || _verificationId == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final err = await context.read<AuthProvider>().verifyPhoneOtp(
+      verificationId: _verificationId!,
+      smsCode: _otpCtrl.text,
+    );
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (err != null) _error = err;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Icon(Icons.map, size: 80, color: AppColors.primary),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Welcome Back',
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                      textAlign: TextAlign.center,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 40),
+                const Icon(Icons.map, size: 80, color: Colors.blue),
+                const SizedBox(height: 16),
+                const Text(
+                  'Welcome to GeoRura',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 40),
+
+                if (!_phoneMode) ...[
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Sign in to continue',
-                      style: TextStyle(color: AppColors.textSecondary),
-                      textAlign: TextAlign.center,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) => v!.isEmpty ? 'Email required' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscure ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
                     ),
-                    const SizedBox(height: 32),
+                    obscureText: _obscure,
+                    validator: (v) => v!.isEmpty ? 'Password required' : null,
+                  ),
+                ] else ...[
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      border: OutlineInputBorder(),
+                      hintText: '+27123456789',
+                    ),
+                    keyboardType: TextInputType.phone,
+                    enabled: !_otpSent,
+                  ),
+                  if (_otpSent) ...[
+                    const SizedBox(height: 16),
                     TextFormField(
-                      controller: _emailController,
+                      controller: _otpCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
+                        labelText: 'OTP Code',
+                        prefixIcon: Icon(Icons.sms_outlined),
+                        border: OutlineInputBorder(),
                       ),
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Email required';
-                        if (!v.contains('@')) return 'Invalid email';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                          ),
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
-                        ),
-                      ),
-                      obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _login(),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'Password required' : null,
-                    ),
-                    if (_errorMessage != null) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.error.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: AppColors.error),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    // Terms notice
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      children: [
-                        Text(
-                          'By signing in you agree to our ',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const TermsScreen(),
-                            ),
-                          ),
-                          child: Text(
-                            'Terms',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          ' and ',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PrivacyPolicyScreen(),
-                            ),
-                          ),
-                          child: Text(
-                            'Privacy Policy',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _loading ? null : _login,
-                      child: _loading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Sign In'),
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _loading
-                          ? null
-                          : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const RegisterScreen(),
-                                ),
-                              );
-                            },
-                      child: const Text('Create Account'),
+                      keyboardType: TextInputType.number,
                     ),
                   ],
+                ],
+
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                ],
+                const SizedBox(height: 24),
+
+                if (!_phoneMode)
+                  FilledButton(
+                    onPressed: _loading ? null : _loginEmail,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Login'),
+                  )
+                else if (!_otpSent)
+                  FilledButton(
+                    onPressed: _loading ? null : _sendOtp,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Send OTP'),
+                  )
+                else
+                  FilledButton(
+                    onPressed: _loading ? null : _verifyOtp,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Verify OTP'),
+                  ),
+
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _loginGoogle,
+                  icon: const Icon(Icons.g_mobiledata, size: 24),
+                  label: const Text('Continue with Google'),
                 ),
-              ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _phoneMode = !_phoneMode;
+                    _otpSent = false;
+                    _error = null;
+                  }),
+                  child: Text(
+                    _phoneMode ? 'Use Email Instead' : 'Use Phone Instead',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                  ),
+                  child: const Text('Create Account'),
+                ),
+              ],
             ),
           ),
         ),

@@ -1,43 +1,47 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_options.dart';
+import 'package:provider/provider.dart';
+import 'package:ruralmap/screens/admin_screen.dart';
 import 'providers/auth_provider.dart';
-import 'screens/auth_gate.dart';
-import 'theme/app_theme.dart';
+import 'screens/login_screen.dart';
+import 'screens/viewer_home.dart';
+import 'screens/enumerator_home.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // Enable Firestore offline persistence
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
-
-  final authProvider = AuthProvider();
-  await authProvider.checkAuthStatus();
-
-  runApp(
-    ChangeNotifierProvider.value(
-      value: authProvider,
-      child: const RuralMapApp(),
-    ),
-  );
+  await Firebase.initializeApp();
+  runApp(const MyApp());
 }
 
-class RuralMapApp extends StatelessWidget {
-  const RuralMapApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Rural Map',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      home: const AuthGate(),
+    return ChangeNotifierProvider(
+      create: (_) => AuthProvider(),
+      child: MaterialApp(
+        title: 'GeoRura',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
+        home: const AuthWrapper(),
+      ),
     );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    if (!auth.isLoaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!auth.isAuthenticated) return const LoginScreen();
+    if (auth.isAdmin) return AdminScreen();
+    if (auth.isEnumerator) return const EnumeratorHome();
+    return const ViewerHome();
   }
 }

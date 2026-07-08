@@ -15,6 +15,14 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
+   
+   
+    
+   
+  
+  
+   
+
   # Local Database
   sqflite: ^2.3.3+1
   path: ^1.9.0
@@ -25,6 +33,7 @@ dependencies:
   device_info_plus: ^11.5.0
   timeago: ^3.6.1
   flutter_markdown: ^0.7.1
+  google_sign_in: ^6.2.1
 
   # Connectivity
   connectivity_plus: ^7.0.0 

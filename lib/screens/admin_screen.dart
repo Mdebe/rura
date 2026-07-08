@@ -61,15 +61,14 @@ class _AdminScreenState extends State<AdminScreen>
     final enumCount = await DBHelper.instance.getUserCountByRole(
       roleEnumerator,
     );
-    await DBHelper.instance.getUserCountByRole(roleViewer);
 
     final sitesByUser = <String, int>{};
     final sitesByEnumerator = <String, int>{};
 
-    // Use enumeratorId or userId - adjust to your Site model
+    // CHANGE THIS LINE TO MATCH YOUR Site MODEL - usually enumeratorId or userId
     for (final s in sites) {
-      final ownerId = s.name; // CHANGE THIS to match your Site model field
-      // ignore: collection_methods_unrelated_type
+      final ownerId =
+          s.siteCode; // <-- CHANGE IF NEEDED: s.userId, s.createdBy, etc
       sitesByUser[ownerId] = (sitesByUser[ownerId] ?? 0) + 1;
 
       final enumUser = users.firstWhere(
@@ -130,11 +129,13 @@ class _AdminScreenState extends State<AdminScreen>
       } else {
         final q = query.toLowerCase();
         _filteredSites = _allSites.where((s) {
-          // ADJUST THESE TO YOUR ACTUAL Site MODEL FIELDS
-          return (s.name.toLowerCase().contains(q)) ||
-              (s.description?.toLowerCase().contains(q) ?? false) ||
-              (s.address?.toLowerCase().contains(q) ?? false) ||
-              (s.householdHead?.toLowerCase().contains(q) ?? false);
+          // CHANGE THESE TO YOUR ACTUAL Site MODEL FIELDS
+          return s.householdHead?.toLowerCase().contains(q) ??
+              false ||
+                  (s.siteCode.toLowerCase().contains(q)) ||
+                  (s.siteCode.toLowerCase().contains(q)) ||
+                  (s.address?.toLowerCase().contains(q) ?? false) ||
+                  (s.householdHead?.toLowerCase().contains(q) ?? false);
         }).toList();
       }
     });
@@ -344,9 +345,7 @@ class _AdminScreenState extends State<AdminScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete User'),
-        content: Text(
-          'Delete ${user.name}? This removes local data only. Delete from Firebase Console too.',
-        ),
+        content: Text('Delete ${user.name}? Delete from Firebase Console too.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -816,7 +815,7 @@ class _AdminScreenState extends State<AdminScreen>
           padding: const EdgeInsets.all(16),
           child: TextField(
             decoration: const InputDecoration(
-              labelText: 'Search by plot, address, owner',
+              labelText: 'Search sites',
               prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
             ),
@@ -844,7 +843,8 @@ class _AdminScreenState extends State<AdminScreen>
                             size: 20,
                           ),
                         ),
-                        title: Text(s.siteCode), // Use siteCode or id
+                        // CHANGE THESE TO YOUR ACTUAL Site FIELDS
+                        title: Text(s.siteCode),
                         subtitle: Text(s.address ?? 'No address'),
                       ),
                     );

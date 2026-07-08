@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -31,8 +30,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().currentUser;
-    _nameController = TextEditingController(text: user?.name?? '');
-    _phoneController = TextEditingController(text: user?.phone?? '');
+    _nameController = TextEditingController(text: user?.name ?? '');
+    _phoneController = TextEditingController(text: user?.phone ?? '');
   }
 
   @override
@@ -65,9 +64,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _errorMessage = error;
     });
     if (error == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile updated')));
       Navigator.of(context).pop(true);
     }
   }
@@ -108,7 +107,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('This will permanently delete your account and all data. This cannot be undone.'),
+            const Text(
+              'This will permanently delete your account and all data. This cannot be undone.',
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
@@ -134,7 +135,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       ),
     );
 
-    if (confirmed!= true ||!mounted) return; // Fixed: spacing + mounted check
+    if (confirmed != true || !mounted) return;
 
     final auth = context.read<AuthProvider>();
     final error = await auth.deleteAccount(passwordController.text);
@@ -153,7 +154,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.currentUser;
-    final initials = user?.name.split(' ').map((e) => e.isNotEmpty? e[0] : '').take(2).join().toUpperCase()?? 'U';
+    final initials =
+        user?.name
+            .split(' ')
+            .map((e) => e.isNotEmpty ? e[0] : '')
+            .take(2)
+            .join()
+            .toUpperCase() ??
+        'U';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Edit Profile')),
@@ -161,7 +169,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         child: ListView(
           padding: const EdgeInsets.all(18),
           children: [
-            // Avatar + Basic Info
             Center(
               child: Column(
                 children: [
@@ -179,24 +186,34 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    user?.name?? '',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    user?.name ?? '',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: user?.role == 'Admin'? AppColors.accent : Colors.grey.shade300,
+                      color: user?.role == 'Admin'
+                          ? AppColors.accent
+                          : Colors.grey.shade300,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      user?.role?? '',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      user?.role ?? '',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    user?.email?? '',
+                    user?.email ?? '',
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
                 ],
@@ -204,8 +221,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             ),
             const SizedBox(height: 32),
 
-            // Edit Profile Form
-            Text('Profile Details', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              'Profile Details',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
             Form(
               key: _formKey,
@@ -217,7 +238,18 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       labelText: 'Full name',
                       prefixIcon: Icon(Icons.person),
                     ),
-                    validator: (value) => value == null || value.trim().isEmpty? 'Enter your full name' : null,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Enter your full name'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    initialValue: user?.email ?? '',
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email),
+                    ),
+                    enabled: false,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -227,20 +259,32 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       prefixIcon: Icon(Icons.phone),
                     ),
                     keyboardType: TextInputType.phone,
-                    validator: (value) => value == null || value.trim().isEmpty? 'Enter a phone number' : null,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Enter a phone number'
+                        : null,
                   ),
                   const SizedBox(height: 20),
-                  if (_errorMessage!= null)
+                  if (_errorMessage != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
                     ),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: _saving? null : _save,
+                      onPressed: _saving ? null : _save,
                       child: _saving
-                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Text('Save Profile'),
                     ),
                   ),
@@ -250,8 +294,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
             const Divider(height: 48),
 
-            // Change Password
-            Text('Change Password', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              'Change Password',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
             Form(
               key: _passwordFormKey,
@@ -263,12 +311,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       labelText: 'Current password',
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureCurrent? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _obscureCurrent =!_obscureCurrent),
+                        icon: Icon(
+                          _obscureCurrent
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureCurrent = !_obscureCurrent),
                       ),
                     ),
                     obscureText: _obscureCurrent,
-                    validator: (v) => v == null || v.isEmpty? 'Enter current password' : null,
+                    validator: (v) => v == null || v.isEmpty
+                        ? 'Enter current password'
+                        : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -277,8 +332,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       labelText: 'New password',
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureNew? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _obscureNew =!_obscureNew),
+                        icon: Icon(
+                          _obscureNew ? Icons.visibility_off : Icons.visibility,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureNew = !_obscureNew),
                       ),
                     ),
                     obscureText: _obscureNew,
@@ -295,20 +353,31 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       labelText: 'Confirm new password',
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureConfirm? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _obscureConfirm =!_obscureConfirm),
+                        icon: Icon(
+                          _obscureConfirm
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
                       ),
                     ),
                     obscureText: _obscureConfirm,
-                    validator: (v) => v!= _newPassController.text? 'Passwords do not match' : null,
+                    validator: (v) => v != _newPassController.text
+                        ? 'Passwords do not match'
+                        : null,
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
-                      onPressed: _changingPassword? null : _changePassword,
+                      onPressed: _changingPassword ? null : _changePassword,
                       child: _changingPassword
-                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Text('Change Password'),
                     ),
                   ),
@@ -318,19 +387,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
             const Divider(height: 48),
 
-            // Account Actions
-          ListTile(
-  leading: const Icon(Icons.logout, color: Colors.orange),
-  title: const Text('Logout'),
-  onTap: () async {
-    final navigator = Navigator.of(context);
-    await context.read<AuthProvider>().logout();
-    navigator.popUntil((route) => route.isFirst);
-  },
-),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.orange),
+              title: const Text('Logout'),
+              onTap: () async {
+                await context.read<AuthProvider>().logout();
+                if (mounted) {
+                  // ignore: use_build_context_synchronously
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                }
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.delete_forever, color: Colors.red),
-              title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+              title: const Text(
+                'Delete Account',
+                style: TextStyle(color: Colors.red),
+              ),
               onTap: _deleteAccount,
             ),
             const SizedBox(height: 32),

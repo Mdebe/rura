@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../theme/app_theme.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,58 +11,33 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   bool _loading = false;
-  bool _obscurePassword = true;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
+  bool _obscure = true;
+  String? _error;
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-    });
-
-    final auth = context.read<AuthProvider>();
-    final error = await auth.register(
-      name: _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-      phone: _phoneController.text.trim(),
-      role: 'Enumerator',
+    setState(() => _loading = true);
+    final err = await context.read<AuthProvider>().signUpWithEmail(
+      name: _nameCtrl.text,
+      email: _emailCtrl.text,
+      password: _passCtrl.text,
+      phone: _phoneCtrl.text,
     );
-
-    if (!mounted) return;
-
-    setState(() {
-      _loading = false;
-    });
-
-    if (error == null) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created. Please log in.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+    setState(() => _loading = false);
+    if (err == null) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account created. Please log in.')),
+        );
+      }
     } else {
-      setState(() {
-        _errorMessage = error;
-      });
+      setState(() => _error = err);
     }
   }
 
@@ -71,106 +45,72 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Create Account')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                  textInputAction: TextInputAction.next,
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Name required' : null,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email required';
-                    if (!v.contains('@')) return 'Invalid email';
-                    return null;
-                  },
+                validator: (v) => v!.isEmpty ? 'Name required' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _emailCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone',
-                    prefixIcon: Icon(Icons.phone_outlined),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Phone required' : null,
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) => v!.isEmpty ? 'Email required' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _phoneCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Phone',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility
-                            : Icons.visibility_off,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                keyboardType: TextInputType.phone,
+                validator: (v) => v!.isEmpty ? 'Phone required' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _passCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscure ? Icons.visibility : Icons.visibility_off,
                     ),
-                    helperText: 'Min 6 characters',
+                    onPressed: () => setState(() => _obscure = !_obscure),
                   ),
-                  obscureText: _obscurePassword,
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password required';
-                    if (v.length < 6) return 'Min 6 characters';
-                    return null;
-                  },
                 ),
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: AppColors.error),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _loading ? null : _register,
-                  child: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Create Account'),
-                ),
+                obscureText: _obscure,
+                validator: (v) => v!.length < 6 ? 'Min 6 characters' : null,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
-            ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _loading ? null : _register,
+                child: _loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Sign Up'),
+              ),
+            ],
           ),
         ),
       ),
