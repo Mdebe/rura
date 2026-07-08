@@ -46,8 +46,8 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
     _firebaseUser = firebaseUser;
-    if (firebaseUser != null) {
-      try {
+    try {
+      if (firebaseUser != null) {
         final doc = await _firestore
             .collection('users')
             .doc(firebaseUser.uid)
@@ -58,18 +58,21 @@ class AuthProvider with ChangeNotifier {
             'lastLogin': FieldValue.serverTimestamp(),
           });
         } else {
+          debugPrint('User doc missing for ${firebaseUser.uid}, signing out');
           await _firebaseAuth.signOut();
           _currentUser = null;
         }
-      } catch (e) {
-        debugPrint('Auth state error: $e');
+      } else {
         _currentUser = null;
       }
-    } else {
+    } catch (e) {
+      debugPrint('Auth state error: $e');
       _currentUser = null;
+      // Don't sign out here - user might just be offline
+    } finally {
+      _isLoaded = true; // ALWAYS set this
+      notifyListeners();
     }
-    _isLoaded = true;
-    notifyListeners();
   }
 
   Future<String?> loginWithEmail({
