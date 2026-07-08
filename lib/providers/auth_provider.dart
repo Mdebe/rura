@@ -16,7 +16,7 @@ class AuthProvider with ChangeNotifier {
   User? _firebaseUser;
   bool _isLoaded = false;
   bool _hasAcceptedTerms = false;
-  bool _isRegistering = false; // Flag to prevent listener interference
+  bool _isRegistering = false;
 
   AppUser? get currentUser => _currentUser;
   User? get firebaseUser => _firebaseUser;
@@ -52,7 +52,7 @@ class AuthProvider with ChangeNotifier {
             .doc(_firebaseUser!.uid)
             .get()
             .timeout(const Duration(seconds: 10));
-        if (doc.exists) {
+        if (doc.exists && doc.data() != null) {
           _currentUser = AppUser.fromMap(doc.data()!);
         } else {
           _currentUser = await DBHelper.instance.getUserByEmail(
@@ -81,7 +81,6 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> _onAuthStateChanged(User? firebaseUser) async {
-    // Skip listener logic during registration to avoid race condition
     if (_isRegistering) {
       _firebaseUser = firebaseUser;
       return;
@@ -93,11 +92,11 @@ class AuthProvider with ChangeNotifier {
         final docRef = _firestore.collection('users').doc(firebaseUser.uid);
         final doc = await docRef.get().timeout(const Duration(seconds: 10));
 
-        if (doc.exists) {
+        if (doc.exists && doc.data() != null) {
           _currentUser = AppUser.fromMap(doc.data()!);
           final now = DateTime.now();
           await docRef
-              .update({'lastLogin': now.toIso8601String()})
+              .update({'lastLogin': Timestamp.fromDate(now)})
               .timeout(const Duration(seconds: 10));
           _currentUser = _currentUser!.copyWith(lastLogin: now);
           await DBHelper.instance.updateUser(_currentUser!);
@@ -145,7 +144,7 @@ class AuthProvider with ChangeNotifier {
       final doc = await docRef.get().timeout(const Duration(seconds: 10));
       final now = DateTime.now();
 
-      if (!doc.exists) {
+      if (!doc.exists || doc.data() == null) {
         final localUser = await DBHelper.instance.getUserByEmail(email.trim());
         final user =
             (localUser ??
@@ -166,7 +165,7 @@ class AuthProvider with ChangeNotifier {
       } else {
         _currentUser = AppUser.fromMap(doc.data()!);
         await docRef
-            .update({'lastLogin': now.toIso8601String()})
+            .update({'lastLogin': Timestamp.fromDate(now)})
             .timeout(const Duration(seconds: 10));
         _currentUser = _currentUser!.copyWith(lastLogin: now);
         await DBHelper.instance.updateUser(_currentUser!);
@@ -201,7 +200,7 @@ class AuthProvider with ChangeNotifier {
       await cred.user?.updateDisplayName(name.trim());
       final uid = cred.user!.uid;
 
-      // Use serverTimestamp instead of DateTime.now() to avoid null issues
+      // Write with serverTimestamp
       await _firestore
           .collection('users')
           .doc(uid)
@@ -216,8 +215,14 @@ class AuthProvider with ChangeNotifier {
           })
           .timeout(const Duration(seconds: 10));
 
-      // Read back to get actual timestamps, then save locally
+      // Wait for server timestamp to resolve, then read back
+      await Future.delayed(const Duration(milliseconds: 500));
       final doc = await _firestore.collection('users').doc(uid).get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw Exception('User document not created');
+      }
+
       final user = AppUser.fromMap(doc.data()!);
       await DBHelper.instance.insertUser(user);
 
