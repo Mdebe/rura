@@ -7,6 +7,7 @@ import '../../models/site.dart';
 import '../../theme/app_theme.dart';
 
 /// Step 7 — final read-only summary shown before saving locally.
+/// Now includes income, employment, road access, and landmark distances.
 class ReviewStep extends StatelessWidget {
   final SiteType selectedType;
   final String name;
@@ -16,6 +17,28 @@ class ReviewStep extends StatelessWidget {
   final String householdHead;
   final int? householdSize;
   final String phoneNumber;
+
+  // Demographics
+  final int? males;
+  final int? females;
+  final int? children;
+  final int? adults;
+  final int? pensioners;
+  final int? chronicMembers;
+
+  // Income & Employment
+  final String? incomeBracket;
+  final int? employedCount;
+  final int? unemployedCount;
+  final int? grantRecipients;
+
+  // Road & Access
+  final Map<String, dynamic>? roadAccess;
+  final List<Map<String, dynamic>>? landmarkAccesses;
+
+  // Services
+  final List<Map<String, dynamic>>? services;
+  final String? notes;
 
   final List<String> photoPaths;
   final String siteCode;
@@ -33,7 +56,20 @@ class ReviewStep extends StatelessWidget {
     required this.householdHead,
     required this.householdSize,
     required this.phoneNumber,
-
+    this.males,
+    this.females,
+    this.children,
+    this.adults,
+    this.pensioners,
+    this.chronicMembers,
+    this.incomeBracket,
+    this.employedCount,
+    this.unemployedCount,
+    this.grantRecipients,
+    this.roadAccess,
+    this.landmarkAccesses,
+    this.services,
+    this.notes,
     required this.photoPaths,
     required this.siteCode,
     required this.latitude,
@@ -50,6 +86,20 @@ class ReviewStep extends StatelessWidget {
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  String _formatDistance(double? km) {
+    if (km == null) return 'Not specified';
+    if (km < 1) return '${(km * 1000).toStringAsFixed(0)} m';
+    return '${km.toStringAsFixed(1)} km';
+  }
+
+  String _formatMinutes(int? min) {
+    if (min == null) return 'Not specified';
+    if (min < 60) return '$min min';
+    final hours = min ~/ 60;
+    final mins = min % 60;
+    return mins == 0 ? '${hours}h' : '${hours}h ${mins}m';
   }
 
   @override
@@ -101,8 +151,141 @@ class ReviewStep extends StatelessWidget {
                   householdSize?.toString() ?? 'Not provided',
                 ),
                 if (phoneNumber.isNotEmpty) _infoRow('Phone', phoneNumber),
+                if (males != null || females != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Demographics',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (males != null || females != null)
+                    _infoRow('Gender', 'M: ${males ?? 0}, F: ${females ?? 0}'),
+                  if (children != null || adults != null || pensioners != null)
+                    _infoRow(
+                      'Age Groups',
+                      'Children: ${children ?? 0}, Adults: ${adults ?? 0}, Elderly: ${pensioners ?? 0}',
+                    ),
+                  if (chronicMembers != null && chronicMembers! > 0)
+                    _infoRow('Chronic Illness', '$chronicMembers members'),
+                ],
               ],
             ),
+
+            // Income & Employment Section
+            if (incomeBracket != null ||
+                employedCount != null ||
+                unemployedCount != null ||
+                grantRecipients != null) ...[
+              SizedBox(height: isTablet ? 20 : 16),
+              _buildInfoCard(
+                title: 'Income & Employment',
+                icon: Icons.payments_rounded,
+                isTablet: isTablet,
+                children: [
+                  if (incomeBracket != null)
+                    _infoRow('Monthly Income', incomeBracket!),
+                  if (employedCount != null || unemployedCount != null)
+                    _infoRow(
+                      'Employment',
+                      'Employed: ${employedCount ?? 0}, Unemployed: ${unemployedCount ?? 0}',
+                    ),
+                  if (grantRecipients != null && grantRecipients! > 0)
+                    _infoRow('Grant Recipients', '$grantRecipients members'),
+                ],
+              ),
+            ],
+
+            // Road Access Section
+            if (roadAccess != null) ...[
+              SizedBox(height: isTablet ? 20 : 16),
+              _buildInfoCard(
+                title: 'Road Access to Site',
+                icon: Icons.add_road_rounded,
+                isTablet: isTablet,
+                children: [
+                  _infoRow(
+                    'Road Type',
+                    roadAccess!['roadType'] ?? 'Not specified',
+                  ),
+                  _infoRow(
+                    'Condition',
+                    roadAccess!['condition'] ?? 'Not specified',
+                  ),
+                  _infoRow(
+                    'Year-Round Access',
+                    roadAccess!['yearRoundAccess'] == true
+                        ? 'Yes - All weather'
+                        : 'No - Seasonal issues',
+                  ),
+                  if (roadAccess!['distanceToTar'] != null)
+                    _infoRow(
+                      'Distance to Tar Road',
+                      '${roadAccess!['distanceToTar']} km',
+                    ),
+                ],
+              ),
+            ],
+
+            // Landmark Access Section
+            if (landmarkAccesses != null && landmarkAccesses!.isNotEmpty) ...[
+              SizedBox(height: isTablet ? 20 : 16),
+              _buildInfoCard(
+                title: 'Distance to Key Landmarks',
+                icon: Icons.place_rounded,
+                isTablet: isTablet,
+                children: landmarkAccesses!
+                    .where((l) => l['distanceKm'] != null)
+                    .map(
+                      (l) => _infoRow(
+                        l['name'] ?? 'Unknown',
+                        '${_formatDistance(l['distanceKm'])} · ${_formatMinutes(l['travelMinutes'])}',
+                        subtitle: l['mode'] != null ? 'via ${l['mode']}' : null,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+
+            // Services Section
+            if (services != null && services!.isNotEmpty) ...[
+              SizedBox(height: isTablet ? 20 : 16),
+              _buildInfoCard(
+                title: 'Available Services',
+                icon: Icons.miscellaneous_services_rounded,
+                isTablet: isTablet,
+                children: services!
+                    .where((s) => s['available'] == true)
+                    .map(
+                      (s) => _infoRow(
+                        s['name'] ?? 'Unknown',
+                        s['quality'] != null
+                            ? '${s['quality']}/5 stars'
+                            : 'Available',
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+
+            // Notes
+            if (notes != null && notes!.isNotEmpty) ...[
+              SizedBox(height: isTablet ? 20 : 16),
+              _buildInfoCard(
+                title: 'Additional Notes',
+                icon: Icons.notes_rounded,
+                isTablet: isTablet,
+                children: [
+                  Text(
+                    notes!,
+                    style: const TextStyle(fontSize: 14, height: 1.5),
+                  ),
+                ],
+              ),
+            ],
 
             if (photoPaths.isNotEmpty) ...[
               SizedBox(height: isTablet ? 20 : 16),

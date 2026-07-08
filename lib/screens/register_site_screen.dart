@@ -64,6 +64,11 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   final _chronicController = TextEditingController();
   final _notesController = TextEditingController();
 
+  final incomeBracketNotifier = ValueNotifier<String?>(null);
+  final employedController = TextEditingController();
+  final unemployedController = TextEditingController();
+  final grantRecipientsController = TextEditingController();
+
   // State
   SiteType _selectedType = SiteType.house;
   int _currentStep = 0;
@@ -549,7 +554,13 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
-                Expanded(child: _buildStep()),
+                Expanded(
+                  child: _buildStep(
+                    incomeBracketNotifier,
+                    [], // No landmark accesses
+                    [], // No services
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -604,7 +615,11 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     );
   }
 
-  Widget _buildStep() {
+  Widget _buildStep(
+    dynamic roadAccessNotifier,
+    dynamic landmarkAccesses,
+    dynamic services,
+  ) {
     switch (_currentStep) {
       case 0:
         return SiteTypeStep(
@@ -675,6 +690,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           adultsController: _adultsController,
           pensionersController: _pensionersController,
           chronicController: _chronicController,
+          incomeBracketNotifier: incomeBracketNotifier,
+          employedController: employedController,
+          unemployedController: unemployedController,
+          grantRecipientsController: grantRecipientsController,
         );
       default:
         return ReviewStep(
@@ -686,7 +705,20 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           householdHead: _householdHeadController.text.trim(),
           householdSize: int.tryParse(_householdSizeController.text.trim()),
           phoneNumber: _phoneController.text.trim(),
-          // Empty - no services
+          males: int.tryParse(_malesController.text.trim()),
+          females: int.tryParse(_femalesController.text.trim()),
+          children: int.tryParse(_childrenController.text.trim()),
+          adults: int.tryParse(_adultsController.text.trim()),
+          pensioners: int.tryParse(_pensionersController.text.trim()),
+          chronicMembers: int.tryParse(_chronicController.text.trim()),
+          incomeBracket: incomeBracketNotifier.value,
+          employedCount: int.tryParse(employedController.text),
+          unemployedCount: int.tryParse(unemployedController.text),
+          grantRecipients: int.tryParse(grantRecipientsController.text),
+          roadAccess: roadAccessNotifier.value?.toMap(),
+          landmarkAccesses: landmarkAccesses.map((l) => l.toMap()).toList(),
+          services: services.map((s) => s.toMap()).toList(),
+          notes: _notesController.text.trim(),
           photoPaths: _photoPaths,
           siteCode: _siteCodeController.text,
           latitude: _latitude,

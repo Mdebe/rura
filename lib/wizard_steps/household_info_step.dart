@@ -4,17 +4,23 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/app_theme.dart';
 
-/// Step 5 — collects household head, size, demographics, and contact details.
+/// Step 5 — collects household head, size, demographics, income, and contact details.
 class HouseholdInfoStep extends StatefulWidget {
   final TextEditingController householdHeadController;
   final TextEditingController householdSizeController;
   final TextEditingController phoneController;
   final TextEditingController malesController;
   final TextEditingController femalesController;
-  final TextEditingController childrenController; // New: under 18
-  final TextEditingController adultsController; // New: 18-64
+  final TextEditingController childrenController; // under 18
+  final TextEditingController adultsController; // 18-64
   final TextEditingController pensionersController;
   final TextEditingController chronicController;
+
+  // New: Income & employment
+  final ValueNotifier<String?> incomeBracketNotifier;
+  final TextEditingController employedController;
+  final TextEditingController unemployedController;
+  final TextEditingController grantRecipientsController;
 
   const HouseholdInfoStep({
     super.key,
@@ -27,6 +33,10 @@ class HouseholdInfoStep extends StatefulWidget {
     required this.adultsController,
     required this.pensionersController,
     required this.chronicController,
+    required this.incomeBracketNotifier,
+    required this.employedController,
+    required this.unemployedController,
+    required this.grantRecipientsController,
   });
 
   @override
@@ -36,6 +46,15 @@ class HouseholdInfoStep extends StatefulWidget {
 class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
   String? _validationError;
 
+  // SA indigent policy brackets
+  static const List<String> _incomeBrackets = [
+    'R0 - R800',
+    'R801 - R3,500',
+    'R3,501 - R7,500',
+    'R7,501+',
+    'Prefer not to say',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +63,8 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
     widget.childrenController.addListener(_validateTotals);
     widget.adultsController.addListener(_validateTotals);
     widget.pensionersController.addListener(_validateTotals);
+    widget.employedController.addListener(_validateTotals);
+    widget.unemployedController.addListener(_validateTotals);
   }
 
   @override
@@ -53,6 +74,8 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
     widget.childrenController.removeListener(_validateTotals);
     widget.adultsController.removeListener(_validateTotals);
     widget.pensionersController.removeListener(_validateTotals);
+    widget.employedController.removeListener(_validateTotals);
+    widget.unemployedController.removeListener(_validateTotals);
     super.dispose();
   }
 
@@ -63,17 +86,22 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
     final adults = int.tryParse(widget.adultsController.text) ?? 0;
     final pensioners = int.tryParse(widget.pensionersController.text) ?? 0;
     final total = int.tryParse(widget.householdSizeController.text) ?? 0;
+    final employed = int.tryParse(widget.employedController.text) ?? 0;
+    final unemployed = int.tryParse(widget.unemployedController.text) ?? 0;
 
     String? error;
     final genderTotal = males + females;
     final ageTotal = children + adults + pensioners;
+    final workingAge = adults + pensioners;
+    final employmentTotal = employed + unemployed;
 
     if (genderTotal > 0 && genderTotal != total) {
       error = 'Males + Females ($genderTotal) ≠ Total ($total)';
     } else if (ageTotal > 0 && ageTotal != total) {
       error = 'Age groups ($ageTotal) ≠ Total ($total)';
-    } else if (pensioners > adults + pensioners) {
-      error = 'Pensioners cannot exceed adults + elderly';
+    } else if (employmentTotal > workingAge && workingAge > 0) {
+      error =
+          'Employed + Unemployed ($employmentTotal) > Working age ($workingAge)';
     }
 
     if (mounted && error != _validationError) {
@@ -137,6 +165,8 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
             SizedBox(height: isTablet ? 28 : 20),
             _buildHealthSection(isTablet),
             SizedBox(height: isTablet ? 28 : 20),
+            _buildIncomeSection(isTablet), // New section
+            SizedBox(height: isTablet ? 28 : 20),
             _buildContactSection(isTablet),
             if (_validationError != null) ...[
               const SizedBox(height: 16),
@@ -162,7 +192,7 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Capture household composition and contact details for service delivery.',
+          'Capture household composition, income status and contact details for service delivery.',
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: isTablet ? 15 : 14,
@@ -308,6 +338,83 @@ class _HouseholdInfoStepState extends State<HouseholdInfoStep> {
                 helperText:
                     'Members with diabetes, HIV, TB, hypertension, etc.',
               ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIncomeSection(bool isTablet) {
+    return _section(
+      title: 'Income & Employment Status',
+      icon: Icons.payments_rounded,
+      isTablet: isTablet,
+      children: [
+        ValueListenableBuilder<String?>(
+          valueListenable: widget.incomeBracketNotifier,
+          builder: (context, value, _) {
+            return DropdownButtonFormField<String>(
+              value: value,
+              decoration: _decoration(
+                'Monthly Household Income',
+                icon: Icons.account_balance_wallet_rounded,
+              ).copyWith(helperText: 'Used for indigent qualification'),
+              items: _incomeBrackets
+                  .map(
+                    (bracket) =>
+                        DropdownMenuItem(value: bracket, child: Text(bracket)),
+                  )
+                  .toList(),
+              onChanged: (v) => widget.incomeBracketNotifier.value = v,
+              validator: (v) =>
+                  v == null ? 'Please select income bracket' : null,
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Employment Breakdown',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: isTablet ? 15 : 14,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: widget.employedController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: _decoration(
+                  'Employed',
+                  icon: Icons.work_history_rounded,
+                ).copyWith(helperText: 'Full/part-time'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: widget.unemployedController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: _decoration(
+                  'Unemployed',
+                  icon: Icons.person_off_rounded,
+                ).copyWith(helperText: 'Seeking work'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: widget.grantRecipientsController,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: _decoration(
+            'Grant Recipients',
+            icon: Icons.volunteer_activism_rounded,
+          ).copyWith(helperText: 'Child support, disability, old age, etc.'),
         ),
       ],
     );

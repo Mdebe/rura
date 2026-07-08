@@ -38,7 +38,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 8, // Bumped to 8 for firestore_id + isSynced safety
+      version: 9, // Bumped to 9 for income/employment/road access fields
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -67,7 +67,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // CSV IMPORT - FIXED
+  // CSV IMPORT - UPDATED FOR NEW FIELDS
   // ---------------------------------------------------------------------------
 
   Future<int> importSitesFromCsv(String filePath) async {
@@ -148,6 +148,31 @@ class DBHelper {
             }
           }
 
+          // Parse road_access JSON
+          Map<String, dynamic>? roadAccess;
+          final roadAccessStr = map['road_access']?.toString().trim();
+          if (roadAccessStr != null && roadAccessStr.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(roadAccessStr);
+              if (decoded is Map)
+                roadAccess = Map<String, dynamic>.from(decoded);
+            } catch (_) {}
+          }
+
+          // Parse landmark_accesses JSON array
+          List<Map<String, dynamic>>? landmarkAccesses;
+          final landmarkStr = map['landmark_accesses']?.toString().trim();
+          if (landmarkStr != null && landmarkStr.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(landmarkStr);
+              if (decoded is List) {
+                landmarkAccesses = decoded
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList();
+              }
+            } catch (_) {}
+          }
+
           final site = Site(
             name: name,
             siteCode:
@@ -216,6 +241,18 @@ class DBHelper {
                 ) ??
                 DateTime.now(),
             isSynced: false,
+            incomeBracket: map['income_bracket']?.toString().trim(),
+            employedCount: int.tryParse(
+              map['employed_count']?.toString() ?? '',
+            ),
+            unemployedCount: int.tryParse(
+              map['unemployed_count']?.toString() ?? '',
+            ),
+            grantRecipients: int.tryParse(
+              map['grant_recipients']?.toString() ?? '',
+            ),
+            roadAccess: roadAccess,
+            landmarkAccesses: landmarkAccesses,
           );
 
           await txn.insert(
@@ -383,7 +420,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // EXCEL / CSV EXPORTS
+  // EXCEL / CSV EXPORTS - UPDATED FOR NEW FIELDS
   // ---------------------------------------------------------------------------
 
   Future<String> exportSitesToExcel() async {
@@ -427,6 +464,12 @@ class DBHelper {
       'notes',
       'image_path',
       'image_paths',
+      'income_bracket',
+      'employed_count',
+      'unemployed_count',
+      'grant_recipients',
+      'road_access',
+      'landmark_accesses',
     ];
     sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
@@ -467,6 +510,14 @@ class DBHelper {
         TextCellValue(s.notes ?? ''),
         TextCellValue(s.imagePath ?? ''),
         TextCellValue(s.imagePaths != null ? jsonEncode(s.imagePaths) : ''),
+        TextCellValue(s.incomeBracket ?? ''),
+        TextCellValue(s.employedCount?.toString() ?? ''),
+        TextCellValue(s.unemployedCount?.toString() ?? ''),
+        TextCellValue(s.grantRecipients?.toString() ?? ''),
+        TextCellValue(s.roadAccess != null ? jsonEncode(s.roadAccess) : ''),
+        TextCellValue(
+          s.landmarkAccesses != null ? jsonEncode(s.landmarkAccesses) : '',
+        ),
       ]);
     }
 
@@ -523,6 +574,12 @@ class DBHelper {
       'notes',
       'image_path',
       'image_paths',
+      'income_bracket',
+      'employed_count',
+      'unemployed_count',
+      'grant_recipients',
+      'road_access',
+      'landmark_accesses',
     ]);
 
     for (final s in sites) {
@@ -562,6 +619,12 @@ class DBHelper {
         s.notes,
         s.imagePath,
         s.imagePaths != null ? jsonEncode(s.imagePaths) : '',
+        s.incomeBracket,
+        s.employedCount,
+        s.unemployedCount,
+        s.grantRecipients,
+        s.roadAccess != null ? jsonEncode(s.roadAccess) : '',
+        s.landmarkAccesses != null ? jsonEncode(s.landmarkAccesses) : '',
       ]);
     }
 
@@ -619,7 +682,13 @@ class DBHelper {
         traditional_authority TEXT,
         section TEXT,
         distance_from_landmark REAL,
-        directions TEXT
+        directions TEXT,
+        income_bracket TEXT,
+        employed_count INTEGER,
+        unemployed_count INTEGER,
+        grant_recipients INTEGER,
+        road_access TEXT,
+        landmark_accesses TEXT
       )
     ''');
 
@@ -772,6 +841,16 @@ class DBHelper {
     // Version 8: Add firestore_id for Firebase sync
     if (oldVersion < 8) {
       await _addColumnIfNotExists(db, 'sites', 'firestore_id', 'TEXT');
+    }
+
+    // Version 9: Add income, employment, road access fields
+    if (oldVersion < 9) {
+      await _addColumnIfNotExists(db, 'sites', 'income_bracket', 'TEXT');
+      await _addColumnIfNotExists(db, 'sites', 'employed_count', 'INTEGER');
+      await _addColumnIfNotExists(db, 'sites', 'unemployed_count', 'INTEGER');
+      await _addColumnIfNotExists(db, 'sites', 'grant_recipients', 'INTEGER');
+      await _addColumnIfNotExists(db, 'sites', 'road_access', 'TEXT');
+      await _addColumnIfNotExists(db, 'sites', 'landmark_accesses', 'TEXT');
     }
   }
 
@@ -1004,97 +1083,5 @@ class DBHelper {
       countsByType: typeCounts,
       countsByVillage: villageCounts,
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // DEMO DATA
-  // ---------------------------------------------------------------------------
-
-  Future<void> seedIfEmpty() async {
-    final existing = await getAllSites(limit: 1);
-
-    final userCount =
-        Sqflite.firstIntValue(
-          await (await database).rawQuery('SELECT COUNT(*) FROM users'),
-        ) ??
-        0;
-
-    if (userCount == 0) {
-      await insertUser(
-        AppUser(
-          name: 'Admin User',
-          email: 'admin@email.com',
-          phone: '0000000000',
-          role: 'Admin',
-          createdAt: DateTime.now(),
-        ),
-      );
-    }
-
-    if (existing.isNotEmpty) return;
-
-    final now = DateTime.now();
-    final samples = [
-      Site(
-        name: 'Dlamini Residence',
-        village: 'KwaMbonambi',
-        type: SiteType.house,
-        registeredAt: now,
-        siteCode: '',
-        province: '',
-        district: '',
-        municipality: '',
-        ward: '',
-        traditionalAuthority: '',
-        section: '',
-        directions: '',
-      ),
-      Site(
-        name: 'Thandi Spaza Shop',
-        village: 'eSikhawini',
-        type: SiteType.business,
-        registeredAt: now.subtract(const Duration(minutes: 15)),
-        siteCode: '',
-        province: '',
-        district: '',
-        municipality: '',
-        ward: '',
-        traditionalAuthority: '',
-        section: '',
-        directions: '',
-      ),
-      Site(
-        name: 'Zion Christian Church',
-        village: 'Mandlakazi',
-        type: SiteType.church,
-        registeredAt: now.subtract(const Duration(minutes: 30)),
-        siteCode: '',
-        province: '',
-        district: '',
-        municipality: '',
-        ward: '',
-        traditionalAuthority: '',
-        section: '',
-        directions: '',
-      ),
-      Site(
-        name: 'Mandlakazi Primary School',
-        village: 'Mandlakazi',
-        type: SiteType.school,
-        registeredAt: now.subtract(const Duration(hours: 1)),
-        siteCode: '',
-        province: '',
-        district: '',
-        municipality: '',
-        ward: '',
-        traditionalAuthority: '',
-        section: '',
-        directions: '',
-      ),
-    ];
-
-    for (final site in samples) {
-      await insertSite(site);
-    }
   }
 }

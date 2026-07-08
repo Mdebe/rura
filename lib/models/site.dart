@@ -69,6 +69,18 @@ class Site {
   final String directions;
   final double? distanceFromLandmark;
 
+  // NEW: Income & Employment
+  final String? incomeBracket;
+  final int? employedCount;
+  final int? unemployedCount;
+  final int? grantRecipients;
+
+  // NEW: Road & Landmark Access
+  final Map<String, dynamic>?
+  roadAccess; // {roadType, condition, yearRoundAccess, distanceToTar}
+  final List<Map<String, dynamic>>?
+  landmarkAccesses; // [{name, lat, lng, distanceKm, travelMinutes, mode}]
+
   const Site({
     this.id,
     this.firestoreId,
@@ -107,6 +119,12 @@ class Site {
     this.notes,
     this.distanceFromLandmark,
     required this.directions,
+    this.incomeBracket,
+    this.employedCount,
+    this.unemployedCount,
+    this.grantRecipients,
+    this.roadAccess,
+    this.landmarkAccesses,
   });
 
   Site copyWith({
@@ -147,6 +165,12 @@ class Site {
     String? section,
     String? directions,
     double? distanceFromLandmark,
+    String? incomeBracket,
+    int? employedCount,
+    int? unemployedCount,
+    int? grantRecipients,
+    Map<String, dynamic>? roadAccess,
+    List<Map<String, dynamic>>? landmarkAccesses,
   }) {
     return Site(
       id: id ?? this.id,
@@ -186,6 +210,12 @@ class Site {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       services: services ?? this.services,
       notes: notes ?? this.notes,
+      incomeBracket: incomeBracket ?? this.incomeBracket,
+      employedCount: employedCount ?? this.employedCount,
+      unemployedCount: unemployedCount ?? this.unemployedCount,
+      grantRecipients: grantRecipients ?? this.grantRecipients,
+      roadAccess: roadAccess ?? this.roadAccess,
+      landmarkAccesses: landmarkAccesses ?? this.landmarkAccesses,
     );
   }
 
@@ -217,7 +247,7 @@ class Site {
       'pensioners': pensioners,
       'chronic_members': chronicMembers,
       'phone_number': phoneNumber,
-
+      'services': services != null ? jsonEncode(services) : null,
       'notes': notes,
       'site_code': siteCode,
       'province': province,
@@ -228,6 +258,14 @@ class Site {
       'section': section,
       'distance_from_landmark': distanceFromLandmark,
       'directions': directions,
+      'income_bracket': incomeBracket,
+      'employed_count': employedCount,
+      'unemployed_count': unemployedCount,
+      'grant_recipients': grantRecipients,
+      'road_access': roadAccess != null ? jsonEncode(roadAccess) : null,
+      'landmark_accesses': landmarkAccesses != null
+          ? jsonEncode(landmarkAccesses)
+          : null,
     };
   }
 
@@ -263,10 +301,16 @@ class Site {
       'pensioners': pensioners,
       'chronicMembers': chronicMembers,
       'phoneNumber': phoneNumber,
-
+      'services': services,
       'notes': notes,
       'imagePath': imagePath,
       'imagePaths': imagePaths,
+      'incomeBracket': incomeBracket,
+      'employedCount': employedCount,
+      'unemployedCount': unemployedCount,
+      'grantRecipients': grantRecipients,
+      'roadAccess': roadAccess,
+      'landmarkAccesses': landmarkAccesses,
     };
   }
 
@@ -337,7 +381,7 @@ class Site {
 
     // Handle List<String> from old data
     if (value is List<String>) {
-      return value.map((s) => {'name': s, 'quality': 'Unknown'}).toList();
+      return value.map((s) => {'name': s, 'quality': null}).toList();
     }
 
     // Handle JSON string
@@ -347,8 +391,8 @@ class Site {
         if (decoded is List) {
           return decoded.map((e) {
             if (e is Map) return Map<String, dynamic>.from(e);
-            if (e is String) return {'name': e, 'quality': 'Unknown'};
-            return {'name': e.toString(), 'quality': 'Unknown'};
+            if (e is String) return {'name': e, 'quality': null};
+            return {'name': e.toString(), 'quality': null};
           }).toList();
         }
       } catch (_) {
@@ -360,11 +404,45 @@ class Site {
     if (value is List) {
       return value.map((e) {
         if (e is Map) return Map<String, dynamic>.from(e);
-        if (e is String) return {'name': e, 'quality': 'Unknown'};
-        return {'name': e.toString(), 'quality': 'Unknown'};
+        if (e is String) return {'name': e, 'quality': null};
+        return {'name': e.toString(), 'quality': null};
       }).toList();
     }
 
+    return null;
+  }
+
+  static Map<String, dynamic>? _toMap(dynamic value) {
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) return value;
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  static List<Map<String, dynamic>>? _toMapList(dynamic value) {
+    if (value == null) return null;
+    if (value is List<Map<String, dynamic>>) return value;
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    if (value is List) {
+      return value.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
     return null;
   }
 
@@ -409,6 +487,12 @@ class Site {
       section: _toString(map['section']) ?? '',
       directions: _toString(map['directions']) ?? '',
       distanceFromLandmark: _toDouble(map['distance_from_landmark']),
+      incomeBracket: _toString(map['income_bracket']),
+      employedCount: _toInt(map['employed_count']),
+      unemployedCount: _toInt(map['unemployed_count']),
+      grantRecipients: _toInt(map['grant_recipients']),
+      roadAccess: _toMap(map['road_access']),
+      landmarkAccesses: _toMapList(map['landmark_accesses']),
     );
   }
 
@@ -458,6 +542,16 @@ class Site {
       section: data['section'] ?? '',
       directions: data['directions'] ?? '',
       distanceFromLandmark: _toDouble(data['distanceFromLandmark']),
+      incomeBracket: data['incomeBracket'],
+      employedCount: _toInt(data['employedCount']),
+      unemployedCount: _toInt(data['unemployedCount']),
+      grantRecipients: _toInt(data['grantRecipients']),
+      roadAccess: data['roadAccess'] != null
+          ? Map<String, dynamic>.from(data['roadAccess'])
+          : null,
+      landmarkAccesses: data['landmarkAccesses'] != null
+          ? List<Map<String, dynamic>>.from(data['landmarkAccesses'])
+          : null,
     );
   }
 }

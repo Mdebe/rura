@@ -10,6 +10,7 @@ import 'map_screen.dart';
 import 'profile_screen.dart';
 import 'register_site_screen.dart';
 import 'site_list_screen.dart';
+import 'viewer_home.dart'; // ADD THIS
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -47,13 +48,18 @@ class _AppShellScreenState extends State<AppShellScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
 
-    // ADD THIS - prevents null crash during auth transition
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final isAdmin = user.role == 'Admin';
+    final isViewer = user.role == 'Viewer'; // ADD THIS
     final canRegister = isAdmin || _enumeratorsCanRegister;
+
+    // If user is Viewer, show ViewerHome only
+    if (isViewer) {
+      return const ViewerHome();
+    }
 
     final screens = <Widget>[
       DashboardScreen(
