@@ -839,16 +839,6 @@ class DBHelper {
   // NEW METHODS FOR SETUP CHECK
   // ---------------------------------------------------------------------------
 
-  Future<bool> hasUsers() async {
-    final db = await database;
-    final count =
-        Sqflite.firstIntValue(
-          await db.rawQuery('SELECT COUNT(*) FROM users'),
-        ) ??
-        0;
-    return count > 0;
-  }
-
   Future<int> getUserCount() async {
     final db = await database;
     final count =
