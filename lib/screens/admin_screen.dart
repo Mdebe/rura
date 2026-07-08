@@ -326,6 +326,42 @@ class _AdminScreenState extends State<AdminScreen>
     }
   }
 
+  Future<void> _exportToExcel() async {
+    try {
+      final path = await DBHelper.instance.exportSitesToExcel();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exported to Excel: ${path.split('/').last}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportToCsv() async {
+    try {
+      final path = await DBHelper.instance.exportSitesToCsv();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exported to CSV: ${path.split('/').last}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildStatCard(
     String label,
     String value,
@@ -439,6 +475,126 @@ class _AdminScreenState extends State<AdminScreen>
     );
   }
 
+  Widget _buildSiteStats() {
+    // Calculate new stats
+    final withRoadAccess = _allSites.where((s) => s.roadAccess != null).length;
+    final tarredRoad = _allSites
+        .where((s) => s.roadAccess?['roadType'] == 'Tarred')
+        .length;
+    final poorRoads = _allSites
+        .where(
+          (s) =>
+              s.roadAccess?['condition'] == 'Poor' ||
+              s.roadAccess?['condition'] == 'Unusable',
+        )
+        .length;
+    final noYearRound = _allSites
+        .where((s) => s.roadAccess?['yearRoundAccess'] == false)
+        .length;
+
+    final avgIncome = _allSites
+        .where((s) => s.incomeBracket != null)
+        .fold<Map<String, int>>({}, (map, s) {
+          map[s.incomeBracket!] = (map[s.incomeBracket!] ?? 0) + 1;
+          return map;
+        });
+
+    final totalEmployed = _allSites.fold<int>(
+      0,
+      (sum, s) => sum + (s.employedCount ?? 0),
+    );
+    final totalUnemployed = _allSites.fold<int>(
+      0,
+      (sum, s) => sum + (s.unemployedCount ?? 0),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Site Analytics',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _buildStatCard(
+              'With Road Data',
+              withRoadAccess.toString(),
+              Icons.add_road,
+              AppColors.primary,
+            ),
+            const SizedBox(width: 12),
+            _buildStatCard(
+              'Tarred Access',
+              tarredRoad.toString(),
+              Icons.route,
+              AppColors.success,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _buildStatCard(
+              'Poor Roads',
+              poorRoads.toString(),
+              Icons.warning,
+              AppColors.warning,
+            ),
+            const SizedBox(width: 12),
+            _buildStatCard(
+              'Seasonal Only',
+              noYearRound.toString(),
+              Icons.water_damage,
+              AppColors.error,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _buildStatCard(
+              'Employed',
+              totalEmployed.toString(),
+              Icons.work,
+              AppColors.success,
+            ),
+            const SizedBox(width: 12),
+            _buildStatCard(
+              'Unemployed',
+              totalUnemployed.toString(),
+              Icons.work_off,
+              AppColors.error,
+            ),
+          ],
+        ),
+        if (avgIncome.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Text(
+            'Income Distribution',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          ...avgIncome.entries.map(
+            (e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text(e.key)),
+                  Text(
+                    '${e.value} sites',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -499,6 +655,8 @@ class _AdminScreenState extends State<AdminScreen>
                           ),
                         ],
                       ),
+                      const SizedBox(height: 24),
+                      _buildSiteStats(),
                     ],
                   ),
                 ),
@@ -564,6 +722,36 @@ class _AdminScreenState extends State<AdminScreen>
                     Card(
                       child: ListTile(
                         leading: const Icon(
+                          Icons.file_download,
+                          color: AppColors.primary,
+                        ),
+                        title: const Text('Export to Excel'),
+                        subtitle: Text(
+                          'Export ${_allSites.length} sites with all fields',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _exportToExcel,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.file_download,
+                          color: AppColors.info,
+                        ),
+                        title: const Text('Export to CSV'),
+                        subtitle: Text(
+                          'Export ${_allSites.length} sites with all fields',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _exportToCsv,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(
                           Icons.delete_forever,
                           color: AppColors.error,
                         ),
@@ -573,24 +761,6 @@ class _AdminScreenState extends State<AdminScreen>
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: _deleteAllData,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Card(
-                      child: ListTile(
-                        leading: const Icon(
-                          Icons.download,
-                          color: AppColors.primary,
-                        ),
-                        title: const Text('Export Data'),
-                        subtitle: const Text('Coming soon'),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Export feature coming soon'),
-                            ),
-                          );
-                        },
                       ),
                     ),
                   ],

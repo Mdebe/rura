@@ -42,7 +42,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _syncing = false;
   String? _errorMessage;
   int _pendingSync = 0;
-  DateTime? _lastSyncTime;
 
   @override
   bool get wantKeepAlive => true;
@@ -99,10 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _stats = results[0] as DashboardStats;
         _recent = results[1] as List<Site>;
         _pendingSync = fieldStats['pendingSync'] ?? 0;
-        _lastSyncTime = fieldStats['lastSyncTime'] != null
-            ? DateTime.fromMillisecondsSinceEpoch(fieldStats['lastSyncTime']!)
-            : null;
-        _currentUser = authUser; // Use cached value
+        _currentUser = authUser;
         _loading = false;
         _errorMessage = null;
       });
@@ -339,15 +335,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
             ),
-            const Spacer(),
-            if (_lastSyncTime != null)
-              Text(
-                'Last sync: ${DateFormat('HH:mm').format(_lastSyncTime!)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
           ],
         ),
       ],

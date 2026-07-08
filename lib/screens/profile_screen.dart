@@ -5,12 +5,15 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../database/db_helper.dart';
 import '../providers/auth_provider.dart';
 import '../services/sync_service.dart';
 import 'profile_edit_screen.dart';
 import 'admin_screen.dart';
+import 'settings_screen.dart';
+import 'help_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -254,6 +257,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showMessage('Could not open link', color: Colors.red);
+    }
   }
 
   @override
@@ -540,23 +550,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Card(
                 child: Column(
                   children: [
-                    SwitchListTile(
-                      value: false,
-                      onChanged: (v) {},
-                      title: const Text("Dark Mode"),
-                      secondary: const Icon(Icons.dark_mode),
+                    ListTile(
+                      leading: const Icon(Icons.settings),
+                      title: const Text("Settings"),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        );
+                      },
                     ),
                     const Divider(),
                     ListTile(
                       leading: const Icon(Icons.help),
-                      title: const Text("Help"),
+                      title: const Text("Help & Support"),
                       trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const HelpScreen()),
+                        );
+                      },
                     ),
                     const Divider(),
                     ListTile(
                       leading: const Icon(Icons.privacy_tip),
                       title: const Text("Privacy Policy"),
                       trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _launchUrl('https://georura.co.za/privacy'),
                     ),
                     const Divider(),
                     ListTile(
