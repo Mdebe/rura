@@ -99,7 +99,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
     }
 
     return Scaffold(
-      appBar: RuralMapAppBar(
+      appBar: GeoRuraAppBar(
         title: getTitle(),
         subtitle: 'Offline-first census app',
         actions: [
