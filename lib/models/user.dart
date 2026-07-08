@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class AppUser {
   final String uid;
   final String name;
@@ -44,8 +46,8 @@ class AppUser {
       'email': email,
       'phone': phone,
       'role': role,
-      'createdAt': createdAt.toIso8601String(),
-      'lastLogin': lastLogin?.toIso8601String(),
+      'createdAt': Timestamp.fromDate(createdAt),
+      'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
     };
   }
 
@@ -56,6 +58,8 @@ class AppUser {
   }
 
   static DateTime _toDateTime(dynamic value, {DateTime? fallback}) {
+    if (value == null) return fallback ?? DateTime.now();
+    if (value is Timestamp) return value.toDate(); // Added this line
     if (value is DateTime) return value;
     if (value is String) {
       return DateTime.tryParse(value) ?? fallback ?? DateTime.now();

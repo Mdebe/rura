@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../database/db_helper.dart';
 import '../providers/auth_provider.dart';
