@@ -140,6 +140,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     _pensionersController.dispose();
     _chronicController.dispose();
     _notesController.dispose();
+    incomeBracketNotifier.dispose();
+    employedController.dispose();
+    unemployedController.dispose();
+    grantRecipientsController.dispose();
     super.dispose();
   }
 
@@ -488,6 +492,10 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           : _notesController.text.trim(),
       distanceFromLandmark: distanceFromLandmark,
       directions: _directionsController.text.trim(),
+      incomeBracket: incomeBracketNotifier.value,
+      employedCount: int.tryParse(employedController.text),
+      unemployedCount: int.tryParse(unemployedController.text),
+      grantRecipients: int.tryParse(grantRecipientsController.text),
     );
 
     try {
@@ -554,13 +562,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
-                Expanded(
-                  child: _buildStep(
-                    incomeBracketNotifier,
-                    [], // No landmark accesses
-                    [], // No services
-                  ),
-                ),
+                Expanded(child: _buildStep()),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -615,11 +617,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     );
   }
 
-  Widget _buildStep(
-    dynamic roadAccessNotifier,
-    dynamic landmarkAccesses,
-    dynamic services,
-  ) {
+  Widget _buildStep() {
     switch (_currentStep) {
       case 0:
         return SiteTypeStep(
@@ -715,9 +713,9 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           employedCount: int.tryParse(employedController.text),
           unemployedCount: int.tryParse(unemployedController.text),
           grantRecipients: int.tryParse(grantRecipientsController.text),
-          roadAccess: roadAccessNotifier.value?.toMap(),
-          landmarkAccesses: landmarkAccesses.map((l) => l.toMap()).toList(),
-          services: services.map((s) => s.toMap()).toList(),
+          roadAccess: null, // Not implemented in this wizard
+          landmarkAccesses: const [], // Not implemented in this wizard
+          services: const [], // No services step
           notes: _notesController.text.trim(),
           photoPaths: _photoPaths,
           siteCode: _siteCodeController.text,
