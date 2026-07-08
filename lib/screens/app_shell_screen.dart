@@ -46,10 +46,15 @@ class _AppShellScreenState extends State<AppShellScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
-    final isAdmin = user?.role == 'Admin';
+
+    // ADD THIS - prevents null crash during auth transition
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final isAdmin = user.role == 'Admin';
     final canRegister = isAdmin || _enumeratorsCanRegister;
 
-    // Fixed indices - no conditionals
     final screens = <Widget>[
       DashboardScreen(
         refreshToken: _refreshToken,
@@ -59,9 +64,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
       const SiteListScreen(), // 1: Sites
       const SizedBox.shrink(), // 2: Register placeholder
       MapScreen(refreshToken: _refreshToken), // 3: Map
-      const SizedBox.shrink(), // 4: Reports - add ReportsScreen later
+      const SizedBox.shrink(), // 4: Reports
       const ProfileScreen(), // 5: Profile
-      const AdminScreen(), // 6: Admin - ALWAYS here
+      const AdminScreen(), // 6: Admin
     ];
 
     if (_currentIndex >= screens.length) _currentIndex = 0;
@@ -100,9 +105,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       ),
       body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: AppBottomNav(
-        currentIndex: _currentIndex > 4
-            ? 0
-            : _currentIndex, // Don't show admin in bottom nav
+        currentIndex: _currentIndex > 4 ? 0 : _currentIndex,
         isAdmin: isAdmin,
         showRegisterAction: canRegister,
         onTap: (index) => setState(() => _currentIndex = index),

@@ -19,6 +19,7 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _currentUser != null;
   bool get isLoaded => _isLoaded;
   bool get isAdmin => _currentUser?.role == 'Admin';
+  bool get isViewer => _currentUser?.role == 'Viewer';
 
   AuthProvider() {
     _firebaseAuth.authStateChanges().listen(_onAuthStateChanged);
@@ -78,7 +79,8 @@ class AuthProvider with ChangeNotifier {
     } else {
       _currentUser = null;
     }
-    if (_isLoaded) notifyListeners();
+    _isLoaded = true; // FIX: Always set this
+    notifyListeners();
   }
 
   Future<String?> login({
@@ -102,7 +104,7 @@ class AuthProvider with ChangeNotifier {
           name: cred.user?.displayName ?? 'User',
           email: email.trim(),
           phone: '',
-          role: 'Enumerator',
+          role: 'Viewer', // CHANGED: Default to Viewer instead of Enumerator
           createdAt: now,
           lastLogin: now,
         );
@@ -146,7 +148,7 @@ class AuthProvider with ChangeNotifier {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        role: role,
+        role: role, // Role passed from RegisterScreen
         createdAt: now,
         lastLogin: now,
       );
@@ -168,7 +170,7 @@ class AuthProvider with ChangeNotifier {
       try {
         await cred?.user?.delete();
       } catch (_) {}
-      return 'Registration failed: ${e.toString()}';
+      return 'Registration failed: $e';
     }
   }
 

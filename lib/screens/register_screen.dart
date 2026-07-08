@@ -38,27 +38,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     final auth = context.read<AuthProvider>();
-    final error = await auth.register(
-      name: _nameController.text,
-      email: _emailController.text,
+
+    // 1. Create account
+    final registerError = await auth.register(
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
       password: _passwordController.text,
-      phone: _phoneController.text,
-      role: 'Enumerator',
+      phone: _phoneController.text.trim(),
+      role: 'Viewer', // Default to Viewer
     );
 
-    if (error == null && mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created. Please log in.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } else if (mounted) {
+    if (registerError != null && mounted) {
       setState(() {
         _loading = false;
-        _errorMessage = error;
+        _errorMessage = registerError;
       });
+      return;
+    }
+
+    // 2. Auto login - triggers AuthGate to show AppShellScreen
+    final loginError = await auth.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
+
+    if (mounted) {
+      if (loginError == null) {
+        // Success - pop back to AuthGate which routes to AppShellScreen
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Welcome! Account created.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        // Register worked but login failed
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Account created. Please log in: $loginError'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
