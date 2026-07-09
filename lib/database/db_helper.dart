@@ -28,13 +28,18 @@ class DBHelper {
   static const String _dbFileName = 'georura.db';
   static const String _backupFolderName = 'db_backups';
   static const String _exportFolderName = 'db_exports';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbFileName);
 
-    return openDatabase(path, version: _dbVersion, onCreate: _onCreate);
+    return openDatabase(
+      path,
+      version: _dbVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future<String> get _currentDatabasePath async {
@@ -116,8 +121,10 @@ class DBHelper {
 
     await db.execute('''
       CREATE TABLE users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT,
         name TEXT NOT NULL,
-        email TEXT PRIMARY KEY NOT NULL,
+        email TEXT UNIQUE NOT NULL,
         phone TEXT,
         role TEXT NOT NULL,
         createdAt TEXT NOT NULL,
@@ -128,7 +135,22 @@ class DBHelper {
     await db.execute('CREATE INDEX idx_sites_village ON sites(village)');
     await db.execute('CREATE INDEX idx_sites_type ON sites(type)');
     await db.execute('CREATE INDEX idx_sites_synced ON sites(isSynced)');
+    await db.execute('CREATE INDEX idx_sites_created ON sites(created_by_uid)');
     await db.execute('CREATE INDEX idx_users_role ON users(role)');
+    await db.execute('CREATE INDEX idx_users_email ON users(email)');
+    await db.execute('CREATE INDEX idx_users_uid ON users(uid)');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // users table originally had no `uid` column, but AppUser.toSqliteMap()
+      // always includes one — add it so inserts/updates don't fail on
+      // existing installs.
+      await db.execute('ALTER TABLE users ADD COLUMN uid TEXT');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid)',
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -276,6 +298,7 @@ class DBHelper {
 
     final db = await database;
     final map = user.toSqliteMap();
+    map.remove('id'); // local id is autoincrement, never set explicitly
     map['createdAt'] = (map['createdAt'] as String?)?.isNotEmpty == true
         ? map['createdAt']
         : DateTime.now().toIso8601String();
@@ -310,6 +333,18 @@ class DBHelper {
     return AppUser.fromMap(maps.first);
   }
 
+  Future<AppUser?> getUserByUid(String uid) async {
+    final db = await database;
+    final maps = await db.query(
+      'users',
+      where: 'uid = ?',
+      whereArgs: [uid],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return AppUser.fromMap(maps.first);
+  }
+
   /// Updates an existing user and returns the number of rows affected.
   Future<int> updateUser(AppUser user) async {
     if (user.email.trim().isEmpty) {
@@ -317,9 +352,12 @@ class DBHelper {
     }
 
     final db = await database;
+    final map = user.toSqliteMap();
+    map.remove('id');
+
     final updated = await db.update(
       'users',
-      user.toSqliteMap(),
+      map,
       where: 'email = ?',
       whereArgs: [user.email],
     );
@@ -337,7 +375,7 @@ class DBHelper {
       'SELECT COUNT(*) as count FROM users WHERE role = ?',
       [role],
     );
-    return result.first['count'] as int;
+    return int.tryParse(result.first['count'].toString()) ?? 0;
   }
 
   Future<int> getUserCount() async {
@@ -476,7 +514,10 @@ class DBHelper {
     final file = File(filePath);
     if (!await file.exists()) throw Exception('File not found: $filePath');
 
-    final csvString = await file.readAsString();
+    var csvString = await file.readAsString(encoding: utf8);
+    if (csvString.isNotEmpty && csvString.codeUnitAt(0) == 0xFEFF) {
+      csvString = csvString.substring(1);
+    }
     final List<List<dynamic>> rows = const CsvToListConverter().convert(
       csvString,
     );
