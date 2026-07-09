@@ -81,6 +81,12 @@ class Site {
   final List<Map<String, dynamic>>?
   landmarkAccesses; // [{name, lat, lng, distanceKm, travelMinutes, mode}]
 
+  // NEW: Creator tracking for flat /sites collection
+  final String? createdBy; // Email of creator
+  final String? createdByUid; // Firebase UID of creator
+  final String? createdByName; // Display name of creator
+  final DateTime? lastUpdated; // Last sync timestamp
+
   const Site({
     this.id,
     this.firestoreId,
@@ -125,6 +131,10 @@ class Site {
     this.grantRecipients,
     this.roadAccess,
     this.landmarkAccesses,
+    this.createdBy,
+    this.createdByUid,
+    this.createdByName,
+    this.lastUpdated,
   });
 
   Site copyWith({
@@ -171,6 +181,10 @@ class Site {
     int? grantRecipients,
     Map<String, dynamic>? roadAccess,
     List<Map<String, dynamic>>? landmarkAccesses,
+    String? createdBy,
+    String? createdByUid,
+    String? createdByName,
+    DateTime? lastUpdated,
   }) {
     return Site(
       id: id ?? this.id,
@@ -216,6 +230,10 @@ class Site {
       grantRecipients: grantRecipients ?? this.grantRecipients,
       roadAccess: roadAccess ?? this.roadAccess,
       landmarkAccesses: landmarkAccesses ?? this.landmarkAccesses,
+      createdBy: createdBy ?? this.createdBy,
+      createdByUid: createdByUid ?? this.createdByUid,
+      createdByName: createdByName ?? this.createdByName,
+      lastUpdated: lastUpdated ?? this.lastUpdated,
     );
   }
 
@@ -266,6 +284,10 @@ class Site {
       'landmark_accesses': landmarkAccesses != null
           ? jsonEncode(landmarkAccesses)
           : null,
+      'created_by': createdBy,
+      'created_by_uid': createdByUid,
+      'created_by_name': createdByName,
+      'last_updated': lastUpdated?.toIso8601String(),
     };
   }
 
@@ -311,6 +333,12 @@ class Site {
       'grantRecipients': grantRecipients,
       'roadAccess': roadAccess,
       'landmarkAccesses': landmarkAccesses,
+      'createdBy': createdBy,
+      'createdByUid': createdByUid,
+      'createdByName': createdByName,
+      'lastUpdated': lastUpdated != null
+          ? Timestamp.fromDate(lastUpdated!)
+          : FieldValue.serverTimestamp(),
     };
   }
 
@@ -322,6 +350,7 @@ class Site {
 
   static DateTime _toDateTime(dynamic value) {
     if (value is DateTime) return value;
+    if (value is Timestamp) return value.toDate();
     if (value is String) {
       return DateTime.tryParse(value) ?? DateTime.now();
     }
@@ -376,15 +405,12 @@ class Site {
   static List<Map<String, dynamic>>? _toServiceList(dynamic value) {
     if (value == null) return null;
 
-    // Already correct type
     if (value is List<Map<String, dynamic>>) return value;
 
-    // Handle List<String> from old data
     if (value is List<String>) {
       return value.map((s) => {'name': s, 'quality': null}).toList();
     }
 
-    // Handle JSON string
     if (value is String) {
       try {
         final decoded = jsonDecode(value);
@@ -400,7 +426,6 @@ class Site {
       }
     }
 
-    // Handle List<dynamic>
     if (value is List) {
       return value.map((e) {
         if (e is Map) return Map<String, dynamic>.from(e);
@@ -493,6 +518,12 @@ class Site {
       grantRecipients: _toInt(map['grant_recipients']),
       roadAccess: _toMap(map['road_access']),
       landmarkAccesses: _toMapList(map['landmark_accesses']),
+      createdBy: _toString(map['created_by']),
+      createdByUid: _toString(map['created_by_uid']),
+      createdByName: _toString(map['created_by_name']),
+      lastUpdated: map['last_updated'] != null
+          ? _toDateTime(map['last_updated'])
+          : null,
     );
   }
 
@@ -551,6 +582,12 @@ class Site {
           : null,
       landmarkAccesses: data['landmarkAccesses'] != null
           ? List<Map<String, dynamic>>.from(data['landmarkAccesses'])
+          : null,
+      createdBy: data['createdBy'],
+      createdByUid: data['createdByUid'],
+      createdByName: data['createdByName'],
+      lastUpdated: data['lastUpdated'] != null
+          ? (data['lastUpdated'] as Timestamp).toDate()
           : null,
     );
   }

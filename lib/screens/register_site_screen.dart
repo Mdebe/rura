@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
@@ -29,7 +31,7 @@ class RegisterSiteScreen extends StatefulWidget {
 }
 
 class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
-  static const int _stepCount = 7; // Services step added
+  static const int _stepCount = 7;
   static const int _maxPhotos = 5;
 
   final _formKey = GlobalKey<FormState>();
@@ -68,7 +70,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   final unemployedController = TextEditingController();
   final grantRecipientsController = TextEditingController();
 
-  // Services state - FIXED: Use ServiceAvailability objects
+  // Services state
   final List<ServiceAvailability> _selectedServices = [];
 
   // Road & access data
@@ -154,10 +156,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     _siteLocationNotifier.dispose();
     super.dispose();
   }
-
-  // ---------------------------------------------------------------------
-  // Actions - GPS, Photo methods unchanged
-  // ---------------------------------------------------------------------
 
   Future<void> _captureLocation() async {
     setState(() {
@@ -332,10 +330,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Navigation / validation
-  // ---------------------------------------------------------------------
-
   bool _validateStep() {
     switch (_currentStep) {
       case 0:
@@ -424,7 +418,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
           return false;
         }
         return true;
-      case 5: // Services step - optional
+      case 5:
         return true;
       default:
         return true;
@@ -440,6 +434,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     setState(() => _currentStep = (_currentStep - 1).clamp(0, _stepCount - 1));
   }
 
+  // FIX: Save to flat /sites collection, not nested under users
   Future<void> _saveSite() async {
     if (!_validateStep()) return;
     setState(() => _saving = true);
@@ -454,6 +449,8 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     final distanceFromLandmark = double.tryParse(
       _distanceController.text.trim(),
     );
+
+    final currentUser = FirebaseAuth.instance.currentUser;
 
     final site = Site(
       siteCode: _siteCodeController.text,
@@ -508,18 +505,31 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       employedCount: int.tryParse(employedController.text),
       unemployedCount: int.tryParse(unemployedController.text),
       grantRecipients: int.tryParse(grantRecipientsController.text),
+      createdBy: currentUser?.email,
+      createdByUid: currentUser?.uid,
+      createdByName: currentUser?.displayName,
     );
 
     try {
-      final savedSite = await _siteService.saveSite(site);
+      // FIX: Save to flat /sites collection
+      final docRef = FirebaseFirestore.instance.collection('sites').doc();
+
+      final data = site.toMap();
+      data['firestoreId'] = docRef.id;
+      data['isSynced'] = true;
+      data['lastUpdated'] = FieldValue.serverTimestamp();
+      data['createdAt'] = FieldValue.serverTimestamp();
+
+      await docRef.set(data);
+
+      // Update local DB
+      final savedSite = site.copyWith(firestoreId: docRef.id, isSynced: true);
+      await DBHelper.instance.insertSite(savedSite);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              savedSite.isSynced
-                  ? 'Site ${site.siteCode} saved to cloud'
-                  : 'Site ${site.siteCode} saved locally. Will sync when online',
-            ),
+            content: Text('Site ${site.siteCode} saved to cloud'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -539,10 +549,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       }
     }
   }
-
-  // ---------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -39,10 +40,8 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
     }
 
     final connectivity = await Connectivity().checkConnectivity();
-    // ignore: unrelated_type_equality_checks
     if (connectivity == ConnectivityResult.none) {
       ScaffoldMessenger.of(
-        // ignore: use_build_context_synchronously
         context,
       ).showSnackBar(const SnackBar(content: Text('No internet connection')));
       return;
@@ -51,31 +50,45 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
     setState(() => _syncing = true);
 
     try {
+      // FIX: Use flat /sites collection, not /users/{uid}/sites
       final docRef = _site.firestoreId != null
           ? FirebaseFirestore.instance
                 .collection('sites')
                 .doc(_site.firestoreId)
-          : FirebaseFirestore.instance.collection('sites').doc();
+          : FirebaseFirestore.instance.collection('sites').doc(); // Auto ID
 
-      final updatedSite = _site.copyWith(
-        firestoreId: docRef.id,
-        isSynced: true,
-      );
+      final currentUser = FirebaseAuth.instance.currentUser;
 
-      await docRef.set(updatedSite.toMap(), SetOptions(merge: true));
+      final data = _site.toMap();
+      data['firestoreId'] = docRef.id;
+      data['isSynced'] = true;
+      data['lastUpdated'] = FieldValue.serverTimestamp();
+      data['createdBy'] = _site.createdBy ?? currentUser?.email ?? 'Unknown';
+      data['createdByUid'] = currentUser?.uid; // Track who created it
+      data['createdByName'] = currentUser?.displayName ?? _site.createdBy;
+
+      await docRef.set(data, SetOptions(merge: true));
 
       if (_site.id != null) {
-        await DBHelper.instance.updateSite(updatedSite.copyWith(id: _site.id));
+        // Fetch back to get server timestamp
+        final snapshot = await docRef.get();
+        final updatedSite = Site.fromMap(
+          snapshot.data()!,
+        ).copyWith(id: _site.id, firestoreId: docRef.id, isSynced: true);
+        await DBHelper.instance.updateSite(updatedSite);
+
+        if (mounted) {
+          setState(() {
+            _site = updatedSite;
+            _syncing = false;
+          });
+        }
       }
 
       if (mounted) {
-        setState(() {
-          _site = updatedSite;
-          _syncing = false;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Synced to Firebase'),
+            content: Text('Synced to cloud'),
             backgroundColor: Colors.green,
           ),
         );
