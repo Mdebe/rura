@@ -28,18 +28,13 @@ class DBHelper {
   static const String _dbFileName = 'georura.db';
   static const String _backupFolderName = 'db_backups';
   static const String _exportFolderName = 'db_exports';
-  static const int _dbVersion = 10;
+  static const int _dbVersion = 1;
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbFileName);
 
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    return openDatabase(path, version: _dbVersion, onCreate: _onCreate);
   }
 
   Future<String> get _currentDatabasePath async {
@@ -136,150 +131,19 @@ class DBHelper {
     await db.execute('CREATE INDEX idx_users_role ON users(role)');
   }
 
-  Future<bool> _columnExists(Database db, String table, String column) async {
-    final result = await db.rawQuery('PRAGMA table_info($table)');
-    return result.any((row) => row['name'] == column);
-  }
-
-  Future<void> _addColumnIfNotExists(
-    Database db,
-    String table,
-    String column,
-    String type,
-  ) async {
-    if (!await _columnExists(db, table, column)) {
-      await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
-    }
-  }
-
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await _addColumnIfNotExists(db, 'sites', 'latitude', 'REAL');
-      await _addColumnIfNotExists(db, 'sites', 'longitude', 'REAL');
-      await _addColumnIfNotExists(db, 'sites', 'address', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'landmark', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'description', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'household_head', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'household_size', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'phone_number', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'services', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'notes', 'TEXT');
-    }
-
-    if (oldVersion < 3) {
-      await _addColumnIfNotExists(db, 'sites', 'site_code', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'province', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'district', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'municipality', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'ward', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'traditional_authority', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'section', 'TEXT');
-      await _addColumnIfNotExists(
-        db,
-        'sites',
-        'distance_from_landmark',
-        'REAL',
-      );
-      await _addColumnIfNotExists(db, 'sites', 'directions', 'TEXT');
-    }
-
-    if (oldVersion < 4) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS users(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          email TEXT UNIQUE NOT NULL,
-          phone TEXT,
-          role TEXT NOT NULL,
-          is_active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL,
-          assigned_area TEXT
-        )
-      ''');
-    }
-
-    if (oldVersion < 5) {
-      await db.execute('''
-        CREATE TABLE users_new(
-          name TEXT NOT NULL,
-          email TEXT PRIMARY KEY NOT NULL,
-          phone TEXT,
-          role TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          lastLogin TEXT
-        )
-      ''');
-      final oldUsers = await db.query('users');
-      for (final u in oldUsers) {
-        await db.insert('users_new', {
-          'name': u['name'],
-          'email': u['email'],
-          'phone': u['phone'],
-          'role': u['role'],
-          'createdAt': u['created_at'] ?? DateTime.now().toIso8601String(),
-          'lastLogin': null,
-        });
-      }
-      await db.execute('DROP TABLE users');
-      await db.execute('ALTER TABLE users_new RENAME TO users');
-      await _addColumnIfNotExists(
-        db,
-        'sites',
-        'isSynced',
-        'INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-
-    if (oldVersion < 6) {
-      await _addColumnIfNotExists(db, 'sites', 'males', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'females', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'pensioners', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'chronic_members', 'INTEGER');
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_sites_synced ON sites(isSynced)',
-      );
-    }
-
-    if (oldVersion < 7) {
-      await _addColumnIfNotExists(db, 'sites', 'image_paths', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'accuracy', 'REAL');
-      await _addColumnIfNotExists(db, 'sites', 'altitude', 'REAL');
-      await _addColumnIfNotExists(db, 'sites', 'captured_at', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'children', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'adults', 'INTEGER');
-    }
-
-    if (oldVersion < 8) {
-      await _addColumnIfNotExists(db, 'sites', 'firestore_id', 'TEXT');
-    }
-
-    if (oldVersion < 9) {
-      await _addColumnIfNotExists(db, 'sites', 'income_bracket', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'employed_count', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'unemployed_count', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'grant_recipients', 'INTEGER');
-      await _addColumnIfNotExists(db, 'sites', 'road_access', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'landmark_accesses', 'TEXT');
-    }
-
-    if (oldVersion < 10) {
-      await _addColumnIfNotExists(db, 'sites', 'created_by', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'created_by_uid', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'created_by_name', 'TEXT');
-      await _addColumnIfNotExists(db, 'sites', 'last_updated', 'TEXT');
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // SITE CRUD - LOCAL FIRST
   // ---------------------------------------------------------------------------
 
+  /// Registers a new site locally. New sites always start unsynced with no
+  /// Firestore id — they get assigned one once pushed to the backend.
   Future<int> insertSite(Site site) async {
     final db = await database;
     final map = site.toMap();
     map.remove('id');
     map['isSynced'] = 0;
     map['firestore_id'] = null;
+    map['last_updated'] = DateTime.now().toIso8601String();
     return db.insert(
       'sites',
       map,
@@ -287,23 +151,38 @@ class DBHelper {
     );
   }
 
+  /// Updates an existing site and returns the number of rows affected.
+  /// Always stamps `last_updated`, and marks the record unsynced whenever it
+  /// already has a Firestore id (i.e. it was edited after a previous sync).
   Future<int> updateSite(Site site) async {
+    if (site.id == null) {
+      throw ArgumentError('Cannot update a site without an id.');
+    }
+
     final db = await database;
     final map = site.toMap();
+    map['last_updated'] = DateTime.now().toIso8601String();
     if (site.firestoreId != null) {
       map['isSynced'] = 0; // Mark for re-sync if edited
     }
-    return db.update('sites', map, where: 'id =?', whereArgs: [site.id]);
+
+    final updated = await db.update(
+      'sites',
+      map,
+      where: 'id = ?',
+      whereArgs: [site.id],
+    );
+    return updated;
   }
 
   Future<int> deleteSite(int id) async {
     final db = await database;
-    return db.delete('sites', where: 'id =?', whereArgs: [id]);
+    return db.delete('sites', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> deleteAllSites() async {
     final db = await database;
-    return await db.delete('sites');
+    return db.delete('sites');
   }
 
   Future<List<Site>> getAllSites({int? limit}) async {
@@ -320,7 +199,7 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'id =?',
+      where: 'id = ?',
       whereArgs: [id],
       limit: 1,
     );
@@ -332,7 +211,7 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'name LIKE? OR village LIKE? OR household_head LIKE?',
+      where: 'name LIKE ? OR village LIKE ? OR household_head LIKE ?',
       whereArgs: ['%$query%', '%$query%', '%$query%'],
       orderBy: 'registered_at DESC',
     );
@@ -345,7 +224,12 @@ class DBHelper {
 
   Future<int> markSiteUnsynced(int id) async {
     final db = await database;
-    return db.update('sites', {'isSynced': 0}, where: 'id =?', whereArgs: [id]);
+    return db.update(
+      'sites',
+      {'isSynced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<List<Site>> getUnsyncedSites() async {
@@ -367,7 +251,7 @@ class DBHelper {
         'firestore_id': firestoreId,
         'last_updated': DateTime.now().toIso8601String(),
       },
-      where: 'id =?',
+      where: 'id = ?',
       whereArgs: [id],
     );
   }
@@ -384,11 +268,21 @@ class DBHelper {
   // USER CRUD
   // ---------------------------------------------------------------------------
 
+  /// Registers a new user locally.
   Future<int> insertUser(AppUser user) async {
+    if (user.email.trim().isEmpty) {
+      throw ArgumentError('Cannot register a user without an email.');
+    }
+
     final db = await database;
-    return await db.insert(
+    final map = user.toSqliteMap();
+    map['createdAt'] = (map['createdAt'] as String?)?.isNotEmpty == true
+        ? map['createdAt']
+        : DateTime.now().toIso8601String();
+
+    return db.insert(
       'users',
-      user.toMap(),
+      map,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -397,7 +291,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: filterRole != null ? 'role =?' : null,
+      where: filterRole != null ? 'role = ?' : null,
       whereArgs: filterRole != null ? [filterRole] : null,
       orderBy: 'createdAt DESC',
     );
@@ -408,7 +302,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: 'email =?',
+      where: 'email = ?',
       whereArgs: [email],
       limit: 1,
     );
@@ -416,25 +310,31 @@ class DBHelper {
     return AppUser.fromMap(maps.first);
   }
 
+  /// Updates an existing user and returns the number of rows affected.
   Future<int> updateUser(AppUser user) async {
+    if (user.email.trim().isEmpty) {
+      throw ArgumentError('Cannot update a user without an email.');
+    }
+
     final db = await database;
-    return await db.update(
+    final updated = await db.update(
       'users',
-      user.toMap(),
-      where: 'email =?',
+      user.toSqliteMap(),
+      where: 'email = ?',
       whereArgs: [user.email],
     );
+    return updated;
   }
 
   Future<int> deleteUser(String email) async {
     final db = await database;
-    return await db.delete('users', where: 'email =?', whereArgs: [email]);
+    return db.delete('users', where: 'email = ?', whereArgs: [email]);
   }
 
   Future<int> getUserCountByRole(String role) async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM users WHERE role =?',
+      'SELECT COUNT(*) as count FROM users WHERE role = ?',
       [role],
     );
     return result.first['count'] as int;
@@ -442,12 +342,10 @@ class DBHelper {
 
   Future<int> getUserCount() async {
     final db = await database;
-    final count =
-        Sqflite.firstIntValue(
+    return Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM users'),
         ) ??
         0;
-    return count;
   }
 
   Future<bool> hasAdminUser() async {
@@ -522,7 +420,7 @@ class DBHelper {
     final today =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
             [startOfToday.toIso8601String()],
           ),
         ) ??
@@ -530,7 +428,7 @@ class DBHelper {
     final week =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
             [startOfWeek.toIso8601String()],
           ),
         ) ??
@@ -593,8 +491,9 @@ class DBHelper {
     await db.transaction((txn) async {
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty))
+        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty)) {
           continue;
+        }
 
         final map = <String, dynamic>{};
         for (int j = 0; j < headers.length && j < row.length; j++) {
@@ -607,16 +506,18 @@ class DBHelper {
           if (name == null ||
               name.isEmpty ||
               village == null ||
-              village.isEmpty)
+              village.isEmpty) {
             continue;
+          }
 
           List<String>? imagePaths;
           final imagePathsStr = map['image_paths']?.toString().trim();
           if (imagePathsStr != null && imagePathsStr.isNotEmpty) {
             try {
               final decoded = jsonDecode(imagePathsStr);
-              if (decoded is List)
+              if (decoded is List) {
                 imagePaths = decoded.map((e) => e.toString()).toList();
+              }
             } catch (_) {}
           }
 
@@ -638,8 +539,9 @@ class DBHelper {
           if (roadAccessStr != null && roadAccessStr.isNotEmpty) {
             try {
               final decoded = jsonDecode(roadAccessStr);
-              if (decoded is Map)
+              if (decoded is Map) {
                 roadAccess = Map<String, dynamic>.from(decoded);
+              }
             } catch (_) {}
           }
 
@@ -738,55 +640,56 @@ class DBHelper {
   // EXCEL / CSV EXPORTS
   // ---------------------------------------------------------------------------
 
+  static const List<String> _exportHeaders = [
+    'id',
+    'site_code',
+    'name',
+    'type',
+    'registered_at',
+    'province',
+    'district',
+    'municipality',
+    'ward',
+    'traditional_authority',
+    'village',
+    'section',
+    'household_head',
+    'household_size',
+    'males',
+    'females',
+    'children',
+    'adults',
+    'pensioners',
+    'chronic_members',
+    'phone_number',
+    'address',
+    'landmark',
+    'distance_from_landmark',
+    'directions',
+    'latitude',
+    'longitude',
+    'accuracy',
+    'altitude',
+    'captured_at',
+    'description',
+    'services',
+    'notes',
+    'image_path',
+    'image_paths',
+    'income_bracket',
+    'employed_count',
+    'unemployed_count',
+    'grant_recipients',
+    'road_access',
+    'landmark_accesses',
+  ];
+
   Future<String> exportSitesToExcel() async {
     final sites = await getAllSites();
     final excel = Excel.createExcel();
     final sheet = excel['Sites'];
 
-    final headers = [
-      'id',
-      'site_code',
-      'name',
-      'type',
-      'registered_at',
-      'province',
-      'district',
-      'municipality',
-      'ward',
-      'traditional_authority',
-      'village',
-      'section',
-      'household_head',
-      'household_size',
-      'males',
-      'females',
-      'children',
-      'adults',
-      'pensioners',
-      'chronic_members',
-      'phone_number',
-      'address',
-      'landmark',
-      'distance_from_landmark',
-      'directions',
-      'latitude',
-      'longitude',
-      'accuracy',
-      'altitude',
-      'captured_at',
-      'description',
-      'services',
-      'notes',
-      'image_path',
-      'image_paths',
-      'income_bracket',
-      'employed_count',
-      'unemployed_count',
-      'grant_recipients',
-      'road_access',
-      'landmark_accesses',
-    ];
-    sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
+    sheet.appendRow(_exportHeaders.map((e) => TextCellValue(e)).toList());
 
     for (final s in sites) {
       sheet.appendRow([
@@ -851,51 +754,7 @@ class DBHelper {
 
   Future<String> exportSitesToCsv() async {
     final sites = await getAllSites();
-    final rows = <List<dynamic>>[];
-
-    rows.add([
-      'id',
-      'site_code',
-      'name',
-      'type',
-      'registered_at',
-      'province',
-      'district',
-      'municipality',
-      'ward',
-      'traditional_authority',
-      'village',
-      'section',
-      'household_head',
-      'household_size',
-      'males',
-      'females',
-      'children',
-      'adults',
-      'pensioners',
-      'chronic_members',
-      'phone_number',
-      'address',
-      'landmark',
-      'distance_from_landmark',
-      'directions',
-      'latitude',
-      'longitude',
-      'accuracy',
-      'altitude',
-      'captured_at',
-      'description',
-      'services',
-      'notes',
-      'image_path',
-      'image_paths',
-      'income_bracket',
-      'employed_count',
-      'unemployed_count',
-      'grant_recipients',
-      'road_access',
-      'landmark_accesses',
-    ]);
+    final rows = <List<dynamic>>[_exportHeaders];
 
     for (final s in sites) {
       rows.add([
@@ -961,7 +820,9 @@ class DBHelper {
   Future<String> exportDatabase() async {
     final sourcePath = await _currentDatabasePath;
     final sourceFile = File(sourcePath);
-    if (!await sourceFile.exists()) throw Exception('Database file not found.');
+    if (!await sourceFile.exists()) {
+      throw Exception('Database file not found.');
+    }
     final exportDir = await _ensureDirectory(_exportFolderName);
     final targetPath = join(
       exportDir.path,
@@ -974,7 +835,9 @@ class DBHelper {
   Future<String> backupDatabase() async {
     final sourcePath = await _currentDatabasePath;
     final sourceFile = File(sourcePath);
-    if (!await sourceFile.exists()) throw Exception('Database file not found.');
+    if (!await sourceFile.exists()) {
+      throw Exception('Database file not found.');
+    }
     final backupDir = await _ensureDirectory(_backupFolderName);
     final targetPath = join(
       backupDir.path,

@@ -227,8 +227,8 @@ class PrivacyScreen extends StatelessWidget {
               title: '11. Contact Us',
               content:
                   'Data Protection Officer:\n'
-                  'Email: privacy@georura.app\n'
-                  'Phone: +27 (0) 31 000 0000\n\n'
+                  'Email: mfundosithole@outlook.com\n'
+                  'Phone: +27 627102645\n\n'
                   'Security Issues: security@georura.app\n'
                   'General Support: support@georura.app\n\n'
                   'Information Regulator (South Africa):\n'

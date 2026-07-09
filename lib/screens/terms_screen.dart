@@ -179,7 +179,7 @@ class TermsScreen extends StatelessWidget {
               content:
                   'For questions, data requests, or to report violations:\n\n'
                   'Email: support@georura.app\n'
-                  'Phone: +27 (0) 31 000 0000\n'
+                  'Phone: +27 627102645\n'
                   'Hours: Mon-Fri, 08:00-17:00 SAST\n\n'
                   'For urgent data breaches: security@georura.app',
             ),
