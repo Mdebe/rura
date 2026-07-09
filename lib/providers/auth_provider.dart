@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // REQUIRED
 import 'package:local_auth/local_auth.dart';
 import '../database/db_helper.dart';
 import '../models/user.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -59,7 +58,7 @@ class AuthProvider with ChangeNotifier {
 
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
-          // FIX: Use server timestamp instead of DateTime.now().toIso8601String()
+          // FIX: Use FieldValue.serverTimestamp() not DateTime
           await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
 
           // Fetch updated doc to get server timestamp back
@@ -71,10 +70,10 @@ class AuthProvider with ChangeNotifier {
             firebaseUser.email!,
           );
           if (_currentUser != null) {
-            // FIX: Use server timestamp for new user
+            // FIX: Convert DateTime to Timestamp for Firestore
             final data = _currentUser!.toMap();
-            data['lastLogin'] = FieldValue.serverTimestamp();
-            data['createdAt'] = FieldValue.serverTimestamp();
+            data['lastLogin'] = Timestamp.fromDate(DateTime.now());
+            data['createdAt'] = Timestamp.fromDate(_currentUser!.createdAt);
             await docRef.set(data);
           }
         }
@@ -105,13 +104,13 @@ class AuthProvider with ChangeNotifier {
       AppUser localUser;
 
       if (!doc.exists) {
-        // FIX: Use server timestamp for createdAt
+        // FIX: Create with server timestamp
         localUser = AppUser(
           name: cred.user?.displayName ?? 'User',
           email: email.trim(),
           phone: '',
           role: 'Viewer',
-          createdAt: DateTime.now(), // Will be overwritten by server
+          createdAt: DateTime.now(),
           lastLogin: DateTime.now(),
         );
 
@@ -126,7 +125,7 @@ class AuthProvider with ChangeNotifier {
         await DBHelper.instance.insertUser(localUser);
       } else {
         localUser = AppUser.fromMap(doc.data()!);
-        // FIX: Use server timestamp
+        // FIX: Use FieldValue.serverTimestamp()
         await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
 
         // Fetch updated doc
@@ -160,23 +159,19 @@ class AuthProvider with ChangeNotifier {
 
       await cred.user?.updateDisplayName(name.trim());
 
-      final user = AppUser(
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        role: role,
-        createdAt: DateTime.now(),
-        lastLogin: DateTime.now(),
-      );
-
-      // FIX: Use server timestamps
-      final data = user.toMap();
-      data['createdAt'] = FieldValue.serverTimestamp();
-      data['lastLogin'] = FieldValue.serverTimestamp();
+      // FIX: Use server timestamps for Firestore
+      final data = {
+        'name': name.trim(),
+        'email': email.trim(),
+        'phone': phone.trim(),
+        'role': role,
+        'createdAt': FieldValue.serverTimestamp(), // FIX: Server time
+        'lastLogin': FieldValue.serverTimestamp(), // FIX: Server time
+      };
 
       await _firestore.collection('users').doc(cred.user!.uid).set(data);
 
-      // Fetch back to get server timestamps
+      // Fetch back to get server timestamps and create local copy
       final doc = await _firestore
           .collection('users')
           .doc(cred.user!.uid)
