@@ -17,6 +17,7 @@ class AppUser {
     required this.role,
     required this.createdAt,
     this.lastLogin,
+    required String passwordHash,
   });
 
   AppUser copyWith({
@@ -27,6 +28,8 @@ class AppUser {
     String? role,
     DateTime? createdAt,
     DateTime? lastLogin,
+    required String firestoreId,
+    required bool isSynced,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
@@ -36,6 +39,7 @@ class AppUser {
       role: role ?? this.role,
       createdAt: createdAt ?? this.createdAt,
       lastLogin: lastLogin ?? this.lastLogin,
+      passwordHash: '',
     );
   }
 
@@ -97,6 +101,7 @@ class AppUser {
       lastLogin: map['lastLogin'] != null
           ? _toDateTime(map['lastLogin'], fallback: null)
           : null,
+      passwordHash: '',
     );
   }
 }

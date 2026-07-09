@@ -116,6 +116,9 @@ class DBHelper {
         created_by_uid TEXT,
         created_by_name TEXT,
         last_updated TEXT
+         passwordHash TEXT,           -- NEW: for offline login
+    firestore_id TEXT,           -- NEW: Firebase UID
+    isSynced INTEGER DEFAULT 0   -- NEW: 0=local only, 1=synced
       )
     ''');
 
@@ -126,7 +129,8 @@ class DBHelper {
         phone TEXT,
         role TEXT NOT NULL,
         createdAt TEXT NOT NULL,
-        lastLogin TEXT
+        lastLogin TEXT,
+        passwordHash TEXT NOT NULL
       )
     ''');
 

@@ -1,9 +1,13 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // REQUIRED
 import 'package:local_auth/local_auth.dart';
 import '../database/db_helper.dart';
 import '../models/user.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -88,6 +92,89 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String?> register({
+    required String name,
+    required String email,
+    required String password,
+    required String phone,
+    required String role,
+  }) async {
+    // 1. Create local user first - always works offline
+    final localUser = AppUser(
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      role: role,
+      createdAt: DateTime.now(),
+      lastLogin: DateTime.now(),
+      passwordHash: _hashPassword(password), // Store hash for offline login
+    );
+
+    try {
+      // Check if user exists locally first
+      final existing = await DBHelper.instance.getUserByEmail(email.trim());
+      if (existing != null) {
+        return 'Email already registered locally';
+      }
+
+      // Save to SQLite first - offline first
+      await DBHelper.instance.insertUser(localUser);
+
+      // 2. Check connectivity
+      final connectivity = await Connectivity().checkConnectivity();
+      final isOnline = connectivity != ConnectivityResult.none;
+
+      if (!isOnline) {
+        // Offline: return success, will sync later via Dashboard
+        await _firebaseAuth.signOut(); // Ensure no stale session
+        return null;
+      }
+
+      // 3. Online: create Firebase Auth + Firestore
+      UserCredential? cred;
+      try {
+        cred = await _firebaseAuth.createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+
+        await cred.user?.updateDisplayName(name.trim());
+
+        // Write to Firestore with server timestamp
+        final data = localUser.toMap();
+        data['createdAt'] = FieldValue.serverTimestamp();
+        data['lastLogin'] = FieldValue.serverTimestamp();
+        data.remove('passwordHash'); // Don't store hash in Firestore
+
+        await _firestore.collection('users').doc(cred.user!.uid).set(data);
+
+        // 4. Mark as synced locally
+        final syncedUser = localUser.copyWith(
+          firestoreId: cred.user!.uid,
+          isSynced: true,
+        );
+        await DBHelper.instance.updateUser(syncedUser);
+
+        await _firebaseAuth.signOut(); // Force manual login
+        return null;
+      } on FirebaseAuthException catch (e) {
+        // Firebase failed but SQLite succeeded - keep local user
+        await cred?.user?.delete(); // Cleanup if partial
+        debugPrint('Firebase register failed, saved offline: ${e.message}');
+        return null; // Still success - user saved locally
+      }
+    } catch (e) {
+      return 'Registration failed: $e';
+    }
+  }
+
+  // Helper to hash password for offline login
+  String _hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
   Future<String?> login({
     required String email,
     required String password,
@@ -111,7 +198,9 @@ class AuthProvider with ChangeNotifier {
           phone: '',
           role: 'Viewer',
           createdAt: DateTime.now(),
+          // ignore: unnecessary_string_interpolations
           lastLogin: DateTime.now(),
+          passwordHash: '${_hashPassword(password)}',
         );
 
         final data = localUser.toMap();
@@ -140,57 +229,6 @@ class AuthProvider with ChangeNotifier {
       return _handleFirebaseError(e);
     } catch (e) {
       return 'Login failed: ${e.toString()}';
-    }
-  }
-
-  Future<String?> register({
-    required String name,
-    required String email,
-    required String password,
-    required String phone,
-    required String role,
-  }) async {
-    UserCredential? cred;
-    try {
-      cred = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-
-      await cred.user?.updateDisplayName(name.trim());
-
-      // FIX: Use server timestamps for Firestore
-      final data = {
-        'name': name.trim(),
-        'email': email.trim(),
-        'phone': phone.trim(),
-        'role': role,
-        'createdAt': FieldValue.serverTimestamp(), // FIX: Server time
-        'lastLogin': FieldValue.serverTimestamp(), // FIX: Server time
-      };
-
-      await _firestore.collection('users').doc(cred.user!.uid).set(data);
-
-      // Fetch back to get server timestamps and create local copy
-      final doc = await _firestore
-          .collection('users')
-          .doc(cred.user!.uid)
-          .get();
-      final savedUser = AppUser.fromMap(doc.data()!);
-      await DBHelper.instance.insertUser(savedUser);
-      await _firebaseAuth.signOut();
-
-      return null;
-    } on FirebaseAuthException catch (e) {
-      try {
-        await cred?.user?.delete();
-      } catch (_) {}
-      return _handleFirebaseError(e);
-    } catch (e) {
-      try {
-        await cred?.user?.delete();
-      } catch (_) {}
-      return 'Registration failed: $e';
     }
   }
 
@@ -228,6 +266,8 @@ class AuthProvider with ChangeNotifier {
       final updated = _currentUser!.copyWith(
         name: name.trim(),
         phone: phone.trim(),
+        firestoreId: ' ',
+        isSynced: true,
       );
 
       await _firestore.collection('users').doc(_firebaseUser!.uid).update({

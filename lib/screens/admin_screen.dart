@@ -396,7 +396,9 @@ class _AdminScreenState extends State<AdminScreen>
         {'role': newRole},
       );
 
-      await DBHelper.instance.updateUser(user.copyWith(role: newRole));
+      await DBHelper.instance.updateUser(
+        user.copyWith(role: newRole, firestoreId: '', isSynced: true),
+      );
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
