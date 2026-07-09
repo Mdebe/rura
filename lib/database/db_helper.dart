@@ -10,12 +10,9 @@ import '../models/site.dart';
 import '../models/user.dart';
 
 /// Singleton wrapper around the local SQLite database.
-///
-/// Android & iOS only.
 /// Offline-first architecture.
 class DBHelper {
   DBHelper._internal();
-
   static final DBHelper instance = DBHelper._internal();
 
   static Database? _db;
@@ -38,7 +35,7 @@ class DBHelper {
 
     return openDatabase(
       path,
-      version: 9, // Bumped to 9 for income/employment/road access fields
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -51,9 +48,7 @@ class DBHelper {
 
   Future<Directory> _storageDirectory() async {
     final external = await getExternalStorageDirectory();
-    if (external != null) {
-      return external;
-    }
+    if (external != null) return external;
     return getApplicationDocumentsDirectory();
   }
 
@@ -67,7 +62,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // CSV IMPORT - UPDATED FOR NEW FIELDS
+  // CSV IMPORT
   // ---------------------------------------------------------------------------
 
   Future<int> importSitesFromCsv(String filePath) async {
@@ -86,15 +81,12 @@ class DBHelper {
         .toList();
     final db = await database;
     int imported = 0;
-    // ignore: unused_local_variable
-    int skipped = 0;
 
     await db.transaction((txn) async {
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty)) {
+        if (row.isEmpty || row.every((e) => e.toString().trim().isEmpty))
           continue;
-        }
 
         final map = <String, dynamic>{};
         for (int j = 0; j < headers.length && j < row.length; j++) {
@@ -108,27 +100,20 @@ class DBHelper {
               name.isEmpty ||
               village == null ||
               village.isEmpty) {
-            skipped++;
             continue;
           }
 
-          // Parse image_paths JSON array
+          // Parse JSON fields
           List<String>? imagePaths;
-          final imagePathsStr =
-              map['image_paths']?.toString().trim() ??
-              map['imagepaths']?.toString().trim();
+          final imagePathsStr = map['image_paths']?.toString().trim();
           if (imagePathsStr != null && imagePathsStr.isNotEmpty) {
             try {
               final decoded = jsonDecode(imagePathsStr);
-              if (decoded is List) {
+              if (decoded is List)
                 imagePaths = decoded.map((e) => e.toString()).toList();
-              }
-            } catch (_) {
-              imagePaths = [imagePathsStr];
-            }
+            } catch (_) {}
           }
 
-          // Parse services JSON array [{name, quality}]
           List<Map<String, dynamic>>? services;
           final servicesStr = map['services']?.toString().trim();
           if (servicesStr != null && servicesStr.isNotEmpty) {
@@ -139,28 +124,19 @@ class DBHelper {
                     .map((e) => Map<String, dynamic>.from(e))
                     .toList();
               }
-            } catch (_) {
-              services = servicesStr
-                  .split(',')
-                  .map((s) => {'name': s.trim(), 'quality': null})
-                  .where((s) => s['name']!.isNotEmpty)
-                  .toList();
-            }
+            } catch (_) {}
           }
 
-          // Parse road_access JSON
           Map<String, dynamic>? roadAccess;
           final roadAccessStr = map['road_access']?.toString().trim();
           if (roadAccessStr != null && roadAccessStr.isNotEmpty) {
             try {
               final decoded = jsonDecode(roadAccessStr);
               if (decoded is Map)
-                // ignore: curly_braces_in_flow_control_structures
                 roadAccess = Map<String, dynamic>.from(decoded);
             } catch (_) {}
           }
 
-          // Parse landmark_accesses JSON array
           List<Map<String, dynamic>>? landmarkAccesses;
           final landmarkStr = map['landmark_accesses']?.toString().trim();
           if (landmarkStr != null && landmarkStr.isNotEmpty) {
@@ -176,28 +152,19 @@ class DBHelper {
 
           final site = Site(
             name: name,
-            siteCode:
-                map['sitecode']?.toString().trim() ??
-                map['site_code']?.toString().trim() ??
-                '',
+            siteCode: map['site_code']?.toString().trim() ?? '',
             type: SiteTypeX.fromString(map['type']?.toString() ?? 'house'),
             village: village,
             section: map['section']?.toString().trim() ?? '',
             traditionalAuthority:
-                map['traditionalauthority']?.toString().trim() ??
-                map['traditional_authority']?.toString().trim() ??
-                '',
+                map['traditional_authority']?.toString().trim() ?? '',
             ward: map['ward']?.toString().trim() ?? '',
             municipality: map['municipality']?.toString().trim() ?? '',
             district: map['district']?.toString().trim() ?? '',
             province: map['province']?.toString().trim() ?? '',
-            householdHead:
-                map['householdhead']?.toString().trim() ??
-                map['household_head']?.toString().trim(),
+            householdHead: map['household_head']?.toString().trim(),
             householdSize: int.tryParse(
-              map['householdsize']?.toString() ??
-                  map['household_size']?.toString() ??
-                  '',
+              map['household_size']?.toString() ?? '',
             ),
             males: int.tryParse(map['males']?.toString() ?? ''),
             females: int.tryParse(map['females']?.toString() ?? ''),
@@ -205,19 +172,13 @@ class DBHelper {
             adults: int.tryParse(map['adults']?.toString() ?? ''),
             pensioners: int.tryParse(map['pensioners']?.toString() ?? ''),
             chronicMembers: int.tryParse(
-              map['chronicmembers']?.toString() ??
-                  map['chronic_members']?.toString() ??
-                  '',
+              map['chronic_members']?.toString() ?? '',
             ),
-            phoneNumber:
-                map['phonenumber']?.toString().trim() ??
-                map['phone_number']?.toString().trim(),
+            phoneNumber: map['phone_number']?.toString().trim(),
             address: map['address']?.toString().trim(),
             landmark: map['landmark']?.toString().trim(),
             distanceFromLandmark: double.tryParse(
-              map['distancefromlandmark']?.toString() ??
-                  map['distance_from_landmark']?.toString() ??
-                  '',
+              map['distance_from_landmark']?.toString() ?? '',
             ),
             directions: map['directions']?.toString().trim() ?? '',
             latitude: double.tryParse(map['latitude']?.toString() ?? ''),
@@ -230,16 +191,10 @@ class DBHelper {
             description: map['description']?.toString().trim(),
             services: services,
             notes: map['notes']?.toString().trim(),
-            imagePath:
-                map['imagepath']?.toString().trim() ??
-                map['image_path']?.toString().trim(),
+            imagePath: map['image_path']?.toString().trim(),
             imagePaths: imagePaths,
             registeredAt:
-                DateTime.tryParse(
-                  map['registeredat']?.toString() ??
-                      map['registered_at']?.toString() ??
-                      '',
-                ) ??
+                DateTime.tryParse(map['registered_at']?.toString() ?? '') ??
                 DateTime.now(),
             isSynced: false,
             incomeBracket: map['income_bracket']?.toString().trim(),
@@ -263,7 +218,7 @@ class DBHelper {
           );
           imported++;
         } catch (e) {
-          skipped++;
+          // Skip row on error
         }
       }
     });
@@ -272,7 +227,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // SYNC HELPER - Mark as unsynced on local changes
+  // SYNC HELPERS
   // ---------------------------------------------------------------------------
 
   Future<int> markSiteUnsynced(int id) async {
@@ -290,10 +245,19 @@ class DBHelper {
     return rows.map((e) => Site.fromMap(e)).toList();
   }
 
-  Future<int> markSiteSynced(int id) async {
+  Future<int> markSiteSynced(int id, String firestoreId) async {
     final db = await database;
-    return db.update('sites', {'isSynced': 1}, where: 'id =?', whereArgs: [id]);
+    return db.update(
+      'sites',
+      {'isSynced': 1, 'firestore_id': firestoreId},
+      where: 'id =?',
+      whereArgs: [id],
+    );
   }
+
+  // ---------------------------------------------------------------------------
+  // DATABASE BACKUP/EXPORT
+  // ---------------------------------------------------------------------------
 
   Future<String> exportDatabase() async {
     final sourcePath = await _currentDatabasePath;
@@ -336,15 +300,12 @@ class DBHelper {
         .toList();
 
     files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-
     return files.map((file) => file.path).toList();
   }
 
   Future<String?> restoreLatestBackup() async {
     final backupFiles = await getBackupFiles();
-    if (backupFiles.isEmpty) {
-      return null;
-    }
+    if (backupFiles.isEmpty) return null;
 
     await close();
 
@@ -370,18 +331,16 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // STATS METHODS FOR PROFILE
+  // STATS
   // ---------------------------------------------------------------------------
 
   Future<Map<String, int>> getFieldStats() async {
     final db = await database;
-
     final totalSites =
         Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites'),
         ) ??
         0;
-
     final gpsCaptured =
         Sqflite.firstIntValue(
           await db.rawQuery(
@@ -389,7 +348,6 @@ class DBHelper {
           ),
         ) ??
         0;
-
     final pendingSync =
         Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
@@ -421,7 +379,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // EXCEL / CSV EXPORTS - UPDATED FOR NEW FIELDS
+  // EXCEL / CSV EXPORTS
   // ---------------------------------------------------------------------------
 
   Future<String> exportSitesToExcel() async {
@@ -641,7 +599,7 @@ class DBHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // CREATE DATABASE
+  // DATABASE SCHEMA
   // ---------------------------------------------------------------------------
 
   Future<void> _onCreate(Database db, int version) async {
@@ -709,10 +667,6 @@ class DBHelper {
     await db.execute('CREATE INDEX idx_users_role ON users(role)');
     await db.execute('CREATE INDEX idx_sites_synced ON sites(isSynced)');
   }
-
-  // ---------------------------------------------------------------------------
-  // DATABASE MIGRATIONS
-  // ---------------------------------------------------------------------------
 
   Future<bool> _columnExists(Database db, String table, String column) async {
     final result = await db.rawQuery('PRAGMA table_info($table)');
@@ -801,10 +755,7 @@ class DBHelper {
           'email': u['email'],
           'phone': u['phone'],
           'role': u['role'],
-          'createdAt':
-              u['created_at'] ??
-              u['createdAt'] ??
-              DateTime.now().toIso8601String(),
+          'createdAt': u['created_at'] ?? DateTime.now().toIso8601String(),
           'lastLogin': null,
         });
       }
@@ -839,12 +790,10 @@ class DBHelper {
       await _addColumnIfNotExists(db, 'sites', 'adults', 'INTEGER');
     }
 
-    // Version 8: Add firestore_id for Firebase sync
     if (oldVersion < 8) {
       await _addColumnIfNotExists(db, 'sites', 'firestore_id', 'TEXT');
     }
 
-    // Version 9: Add income, employment, road access fields
     if (oldVersion < 9) {
       await _addColumnIfNotExists(db, 'sites', 'income_bracket', 'TEXT');
       await _addColumnIfNotExists(db, 'sites', 'employed_count', 'INTEGER');
@@ -914,10 +863,6 @@ class DBHelper {
     );
     return result.first['count'] as int;
   }
-
-  // ---------------------------------------------------------------------------
-  // NEW METHODS FOR SETUP CHECK
-  // ---------------------------------------------------------------------------
 
   Future<int> getUserCount() async {
     final db = await database;

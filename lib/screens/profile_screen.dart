@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../database/db_helper.dart';
 import '../providers/auth_provider.dart';
@@ -52,10 +53,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => version = info.version);
   }
 
+  // FIX: Load stats from Firebase for real data
   Future<void> _loadStats() async {
-    final stats = await DBHelper.instance.getFieldStats();
-    if (!mounted) return;
-    setState(() => _stats = stats);
+    try {
+      // Get local stats first for quick display
+      final localStats = await DBHelper.instance.getFieldStats();
+
+      // Get Firebase count for total sites
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('sites')
+            .where('createdByUid', isEqualTo: user.uid)
+            .get();
+
+        final totalSites = snapshot.docs.length;
+        final gpsCaptured = snapshot.docs.where((doc) {
+          final data = doc.data();
+          return data['latitude'] != null && data['longitude'] != null;
+        }).length;
+
+        if (!mounted) return;
+        setState(() {
+          _stats = {
+            'totalSites': totalSites,
+            'gpsCaptured': gpsCaptured,
+            'pendingSync': localStats['pendingSync'] ?? 0,
+          };
+        });
+      } else {
+        if (!mounted) return;
+        setState(() => _stats = localStats);
+      }
+    } catch (e) {
+      // Fallback to local stats on error
+      final stats = await DBHelper.instance.getFieldStats();
+      if (!mounted) return;
+      setState(() => _stats = stats);
+    }
   }
 
   Future<void> _loadDbSize() async {
@@ -71,6 +106,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
+  // FIX: Sync now uses real Firebase /sites collection
   Future<void> _syncData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -391,16 +427,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             )
                           : Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$pendingCount",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: pendingCount > 0
-                                        ? Colors.orange
-                                        : Colors.green,
-                                  ),
-                                ),
+                              children: <Widget>[
                                 if (pendingCount > 0) ...[
                                   const SizedBox(width: 8),
                                   _syncing

@@ -43,7 +43,7 @@ class _AdminScreenState extends State<AdminScreen>
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      // Load from Firebase
+      // Load users from Firebase
       final usersSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .orderBy('createdAt', descending: true)
@@ -53,8 +53,15 @@ class _AdminScreenState extends State<AdminScreen>
           .map((doc) => AppUser.fromMap({...doc.data(), 'uid': doc.id}))
           .toList();
 
-      // Sites from local DB
-      final sites = await DBHelper.instance.getAllSites();
+      // FIX: Load sites from Firebase /sites collection, not local DB
+      final sitesSnapshot = await FirebaseFirestore.instance
+          .collection('sites')
+          .orderBy('registeredAt', descending: true)
+          .get();
+
+      final sites = sitesSnapshot.docs
+          .map((doc) => Site.fromFirestore(doc))
+          .toList();
 
       final adminCount = users.where((u) => u.role == roleAdmin).length;
       final enumCount = users.where((u) => u.role == roleEnumerator).length;
@@ -99,12 +106,10 @@ class _AdminScreenState extends State<AdminScreen>
   void _applyFilters() {
     List<AppUser> filtered = _users;
 
-    // Filter by role
     if (_roleFilter != 'All') {
       filtered = filtered.where((u) => u.role == _roleFilter).toList();
     }
 
-    // Filter by search query
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((u) {
         return u.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
@@ -271,7 +276,6 @@ class _AdminScreenState extends State<AdminScreen>
                             .doc(uid)
                             .set(data, SetOptions(merge: true));
 
-                        // Update local DB
                         final doc = await FirebaseFirestore.instance
                             .collection('users')
                             .doc(uid)
@@ -408,13 +412,14 @@ class _AdminScreenState extends State<AdminScreen>
     }
   }
 
+  // FIX: Delete from Firebase /sites, not just local
   Future<void> _deleteAllData() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete All Data'),
+        title: const Text('Delete All Sites'),
         content: Text(
-          'This will delete ALL ${_allSites.length} sites from local database. Firebase data unaffected.',
+          'This will delete ALL ${_allSites.length} sites from Firebase. This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -430,12 +435,31 @@ class _AdminScreenState extends State<AdminScreen>
       ),
     );
     if (confirm == true) {
-      await DBHelper.instance.deleteAllSites();
-      _loadData();
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('All sites deleted')));
+      try {
+        // Delete from Firebase
+        final batch = FirebaseFirestore.instance.batch();
+        final sitesSnapshot = await FirebaseFirestore.instance
+            .collection('sites')
+            .get();
+        for (var doc in sitesSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+
+        // Delete from local
+        await DBHelper.instance.deleteAllSites();
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('All sites deleted from Firebase')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        }
       }
     }
   }
@@ -523,8 +547,6 @@ class _AdminScreenState extends State<AdminScreen>
   Widget _buildUserTile(AppUser user) {
     final isAdmin = user.role == roleAdmin;
     final isEnum = user.role == roleEnumerator;
-    // ignore: unused_local_variable
-    final isViewer = user.role == roleViewer;
 
     Color roleColor = isAdmin
         ? AppColors.error
@@ -717,12 +739,10 @@ class _AdminScreenState extends State<AdminScreen>
 
     final totalEmployed = _allSites.fold<int>(
       0,
-      // ignore: avoid_types_as_parameter_names
       (sum, s) => sum + (s.employedCount ?? 0),
     );
     final totalUnemployed = _allSites.fold<int>(
       0,
-      // ignore: avoid_types_as_parameter_names
       (sum, s) => sum + (s.unemployedCount ?? 0),
     );
 
@@ -1020,7 +1040,7 @@ class _AdminScreenState extends State<AdminScreen>
                         ),
                         title: const Text('Delete All Sites'),
                         subtitle: Text(
-                          '${_allSites.length} sites will be permanently deleted',
+                          '${_allSites.length} sites will be permanently deleted from Firebase',
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: _deleteAllData,

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../theme/app_theme.dart';
 
@@ -71,6 +72,15 @@ class RoadAccess {
     'yearRoundAccess': yearRoundAccess,
     'distanceToTar': distanceToTar,
   };
+
+  factory RoadAccess.fromMap(Map<String, dynamic> map) {
+    return RoadAccess(
+      roadType: map['roadType'] ?? 'Gravel',
+      condition: map['condition'] ?? 'Fair',
+      yearRoundAccess: map['yearRoundAccess'] ?? true,
+      distanceToTar: map['distanceToTar'],
+    );
+  }
 }
 
 /// Landmark accessibility from site with GPS
@@ -116,6 +126,17 @@ class LandmarkAccess {
     'travelMinutes': travelMinutes,
     'mode': mode,
   };
+
+  factory LandmarkAccess.fromMap(Map<String, dynamic> map) {
+    return LandmarkAccess(
+      name: map['name'] ?? '',
+      lat: map['lat']?.toDouble(),
+      lng: map['lng']?.toDouble(),
+      distanceKm: map['distanceKm']?.toDouble(),
+      travelMinutes: map['travelMinutes'],
+      mode: map['mode'],
+    );
+  }
 }
 
 /// Step 6 — Roads, GPS site location, and landmark distances.
@@ -202,6 +223,7 @@ class _ServicesStepState extends State<ServicesStep> {
 
   bool _locating = false;
   String? _locationError;
+  final MapController _mapController = MapController();
 
   ServiceAvailability? _getService(String name) {
     try {
@@ -219,6 +241,7 @@ class _ServicesStepState extends State<ServicesStep> {
     }
   }
 
+  // FIX: Complete permission flow
   Future<void> _getSiteLocation() async {
     setState(() {
       _locating = true;
@@ -226,6 +249,13 @@ class _ServicesStepState extends State<ServicesStep> {
     });
 
     try {
+      // 1. Check if location service is enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw Exception('Location services are disabled. Enable in settings.');
+      }
+
+      // 2. Check permission
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -233,17 +263,42 @@ class _ServicesStepState extends State<ServicesStep> {
           throw Exception('Location permission denied');
         }
       }
+
       if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions permanently denied');
+        throw Exception(
+          'Location permissions permanently denied. Enable in app settings.',
+        );
       }
 
+      // 3. Get position
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      widget.siteLocationNotifier.value = LatLng(pos.latitude, pos.longitude);
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 0,
+        ),
+      ).timeout(const Duration(seconds: 15));
+
+      final newLocation = LatLng(pos.latitude, pos.longitude);
+      widget.siteLocationNotifier.value = newLocation;
+
+      // Move map to new location
+      _mapController.move(newLocation, 15);
+
+      // Recalculate all landmark distances
       _recalculateAllDistances();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location captured successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
     } catch (e) {
-      setState(() => _locationError = e.toString());
+      setState(
+        () => _locationError = e.toString().replaceAll('Exception: ', ''),
+      );
     } finally {
       if (mounted) setState(() => _locating = false);
     }
@@ -286,6 +341,107 @@ class _ServicesStepState extends State<ServicesStep> {
     };
     final speed = speeds[mode] ?? 5.0;
     return ((km / speed) * 60).round();
+  }
+
+  Future<void> _setLandmarkLocation(String landmarkName) async {
+    final currentAccess = _getLandmark(landmarkName);
+    final TextEditingController latCtrl = TextEditingController(
+      text: currentAccess?.lat?.toString() ?? '',
+    );
+    final TextEditingController lngCtrl = TextEditingController(
+      text: currentAccess?.lng?.toString() ?? '',
+    );
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Set Location: $landmarkName'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: latCtrl,
+              decoration: const InputDecoration(labelText: 'Latitude'),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: lngCtrl,
+              decoration: const InputDecoration(labelText: 'Longitude'),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () async {
+                try {
+                  final pos = await Geolocator.getCurrentPosition(
+                    locationSettings: const LocationSettings(
+                      accuracy: LocationAccuracy.high,
+                    ),
+                  );
+                  latCtrl.text = pos.latitude.toStringAsFixed(6);
+                  lngCtrl.text = pos.longitude.toStringAsFixed(6);
+                } catch (e) {
+                  ScaffoldMessenger.of(
+                    // ignore: use_build_context_synchronously
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('GPS error: $e')));
+                }
+              },
+              icon: const Icon(Icons.gps_fixed),
+              label: const Text('Use Current Location'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final lat = double.tryParse(latCtrl.text);
+      final lng = double.tryParse(lngCtrl.text);
+
+      if (lat != null && lng != null) {
+        final site = widget.siteLocationNotifier.value;
+        double? distKm;
+        int? minutes;
+
+        if (site != null) {
+          final dist = Geolocator.distanceBetween(
+            site.latitude,
+            site.longitude,
+            lat,
+            lng,
+          );
+          distKm = double.parse((dist / 1000).toStringAsFixed(2));
+          final mode = currentAccess?.mode ?? 'Walking';
+          minutes = _estimateMinutes(distKm, mode);
+        }
+
+        widget.onUpdateLandmark(
+          landmarkName,
+          (currentAccess ?? LandmarkAccess(name: landmarkName)).copyWith(
+            lat: lat,
+            lng: lng,
+            distanceKm: distKm,
+            travelMinutes: minutes,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -363,11 +519,13 @@ class _ServicesStepState extends State<ServicesStep> {
                   border: Border.all(color: AppColors.divider),
                 ),
                 child: FlutterMap(
+                  mapController: _mapController,
                   options: MapOptions(initialCenter: site, initialZoom: 15),
                   children: [
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.georura.app',
                     ),
                     MarkerLayer(
                       markers: [
@@ -429,9 +587,31 @@ class _ServicesStepState extends State<ServicesStep> {
             ),
             if (_locationError != null) ...[
               const SizedBox(height: 8),
-              Text(
-                _locationError!,
-                style: const TextStyle(color: AppColors.error, fontSize: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.error,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _locationError!,
+                        style: const TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
@@ -619,7 +799,19 @@ class _ServicesStepState extends State<ServicesStep> {
                 ),
               ),
               if (hasCoords)
-                Icon(Icons.location_on, size: 16, color: AppColors.success),
+                IconButton(
+                  icon: const Icon(Icons.edit_location_alt, size: 20),
+                  onPressed: () => _setLandmarkLocation(name),
+                  tooltip: 'Edit location',
+                  visualDensity: VisualDensity.compact,
+                ),
+              if (!hasCoords)
+                IconButton(
+                  icon: const Icon(Icons.add_location, size: 20),
+                  onPressed: () => _setLandmarkLocation(name),
+                  tooltip: 'Set location',
+                  visualDensity: VisualDensity.compact,
+                ),
               if (hasData) ...[
                 const SizedBox(width: 8),
                 Container(
