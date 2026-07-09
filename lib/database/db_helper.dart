@@ -235,26 +235,6 @@ class DBHelper {
     return db.update('sites', {'isSynced': 0}, where: 'id =?', whereArgs: [id]);
   }
 
-  Future<List<Site>> getUnsyncedSites() async {
-    final db = await database;
-    final rows = await db.query(
-      'sites',
-      where: 'isSynced = 0',
-      orderBy: 'registered_at ASC',
-    );
-    return rows.map((e) => Site.fromMap(e)).toList();
-  }
-
-  Future<int> markSiteSynced(int id, String firestoreId) async {
-    final db = await database;
-    return db.update(
-      'sites',
-      {'isSynced': 1, 'firestore_id': firestoreId},
-      where: 'id =?',
-      whereArgs: [id],
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // DATABASE BACKUP/EXPORT
   // ---------------------------------------------------------------------------
@@ -888,23 +868,72 @@ class DBHelper {
   // SITE CRUD
   // ---------------------------------------------------------------------------
 
+  // In db_helper.dart - replace these methods
+
+  // ---------------------------------------------------------------------------
+  // SITE CRUD - FIXED FOR LOCAL-FIRST
+  // ---------------------------------------------------------------------------
+
   Future<int> insertSite(Site site) async {
     final db = await database;
+    final map = site.toMap();
+
+    // FIX: Always save as unsynced locally first
+    map['isSynced'] = 0;
+    map['firestore_id'] = null; // Clear any Firebase ID
+    map.remove('id'); // Let SQLite auto-increment
+
     return db.insert(
       'sites',
-      site.toMap()..remove('id'),
+      map,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
   Future<int> updateSite(Site site) async {
     final db = await database;
+    final map = site.toMap();
+
+    // FIX: If editing a synced record locally, mark unsynced again
+    if (site.firestoreId != null) {
+      map['isSynced'] = 0; // Will need re-sync
+    }
+
+    return db.update('sites', map, where: 'id =?', whereArgs: [site.id]);
+  }
+
+  Future<List<Site>> getUnsyncedSites() async {
+    final db = await database;
+    final rows = await db.query(
+      'sites',
+      where: 'isSynced =?',
+      whereArgs: [0],
+      orderBy: 'registered_at ASC',
+    );
+    return rows.map((e) => Site.fromMap(e)).toList();
+  }
+
+  Future<int> markSiteSynced(int id, String firestoreId) async {
+    final db = await database;
     return db.update(
       'sites',
-      site.toMap(),
+      {
+        'isSynced': 1,
+        'firestore_id': firestoreId,
+        'last_updated': DateTime.now().toIso8601String(),
+      },
       where: 'id =?',
-      whereArgs: [site.id],
+      whereArgs: [id],
     );
+  }
+
+  // Helper for Dashboard pending count
+  Future<int> getPendingSyncCount() async {
+    final db = await database;
+    return Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
+        ) ??
+        0;
   }
 
   Future<int> deleteSite(int id) async {
