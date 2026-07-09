@@ -83,7 +83,7 @@ class _SiteListScreenState extends State<SiteListScreen> {
     try {
       Query queryRef = _firestore
           .collection('sites')
-          .where('createdByUid', isEqualTo: uid)
+          .limit(50) // Limit to 50 most recent to avoid reading entire DB
           .orderBy('registeredAt', descending: true);
 
       final snapshot = await queryRef.get();

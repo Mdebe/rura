@@ -206,7 +206,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     try {
       final snapshot = await _firestore
           .collection('sites')
-          .where('createdByUid', isEqualTo: uid)
           .orderBy('registeredAt', descending: true)
           .get(const GetOptions(source: Source.serverAndCache));
       return _FirebaseFetchResult(
@@ -229,7 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _liveSub?.cancel();
     _liveSub = _firestore
         .collection('sites')
-        .where('createdByUid', isEqualTo: uid)
+       
         .orderBy('registeredAt', descending: true)
         .snapshots()
         .listen(
