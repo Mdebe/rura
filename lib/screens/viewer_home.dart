@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // FIX: For Timestamp
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 
 import '../providers/auth_provider.dart';
@@ -35,22 +35,25 @@ class _ViewerHomeState extends State<ViewerHome> {
 
   Future<void> _loadData() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
       final results = await Future.wait([
         _firestore.collection('sites').count().get(),
         _firestore
             .collection('sites')
+            .where('createdByUid', isEqualTo: user.uid) // Filter by user
             .orderBy('registeredAt', descending: true)
             .get(),
       ]);
 
       if (mounted) {
-        final allDocs = (results[1] as QuerySnapshot).docs;
-        final sites = allDocs
-            .map(
-              (doc) => Site.fromFirestore(
-                doc as DocumentSnapshot<Map<String, dynamic>>,
-              ),
-            )
+        final querySnapshot = results[1] as QuerySnapshot<Map<String, dynamic>>;
+        final sites = querySnapshot.docs
+            .map((doc) => Site.fromFirestore(doc))
             .toList();
 
         setState(() {
@@ -88,10 +91,11 @@ class _ViewerHomeState extends State<ViewerHome> {
       if (query.isEmpty) {
         _filteredSites = _allSites;
       } else {
+        final lowerQuery = query.toLowerCase();
         _filteredSites = _allSites.where((site) {
-          return site.name.toLowerCase().contains(query.toLowerCase()) ||
-              site.siteCode.toLowerCase().contains(query.toLowerCase()) ||
-              site.village.toLowerCase().contains(query.toLowerCase());
+          return site.name.toLowerCase().contains(lowerQuery) ||
+              site.siteCode.toLowerCase().contains(lowerQuery) ||
+              site.village.toLowerCase().contains(lowerQuery);
         }).toList();
       }
     });
@@ -140,7 +144,7 @@ class _ViewerHomeState extends State<ViewerHome> {
                 'Directions',
                 site.directions.isEmpty ? 'Not provided' : site.directions,
               ),
-              const SizedBox(height: 24),
+              const Spacer(),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -198,9 +202,7 @@ class _ViewerHomeState extends State<ViewerHome> {
     }
 
     return Scaffold(
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface, // FIX: Remove black bg
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: _buildAppBar(user),
       drawer: _buildDrawer(user),
       body: _loading

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ADD THIS
 import 'dart:ui';
 
 import '../database/db_helper.dart';
@@ -36,6 +37,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   DashboardStats _stats = DashboardStats.empty();
   List<Site> _recent = [];
   AppUser? _currentUser;
@@ -112,6 +115,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  // FIX: Load from both Firebase + Local and merge
   Future<void> _load() async {
     if (!mounted) return;
     setState(() {
@@ -121,19 +125,73 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     try {
       final authUser = context.read<AuthProvider>().currentUser;
+      final user = FirebaseAuth.instance.currentUser;
 
+      // Load from Firebase and Local in parallel
       final results = await Future.wait([
-        DBHelper.instance.getDashboardStats(),
+        _loadFirebaseSites(user?.uid),
         DBHelper.instance.getAllSites(limit: 5),
         DBHelper.instance.getFieldStats(),
       ]);
 
-      if (!mounted) return;
+      final firebaseSites = results[0] as List<Site>;
+      final localRecent = results[1] as List<Site>;
       final fieldStats = results[2] as Map<String, int>;
 
+      // Merge sites: Firebase takes priority, deduplicate by firestore_id or siteCode
+      final Map<String, Site> mergedMap = {};
+
+      for (final site in firebaseSites) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty) mergedMap[key] = site;
+      }
+
+      for (final site in localRecent) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty && !mergedMap.containsKey(key)) {
+          mergedMap[key] = site;
+        }
+      }
+
+      final allSites = mergedMap.values.toList();
+      allSites.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
+
+      // Calculate stats from merged data
+      final totalSites =
+          firebaseSites.length; // Use Firebase count as source of truth
+      final gpsCaptured = firebaseSites
+          .where((s) => s.latitude != null && s.longitude != null)
+          .length;
+
+      final Map<SiteType, int> countsByType = {};
+      final Map<String, int> countsByVillage = {};
+
+      for (final site in firebaseSites) {
+        countsByType[site.type] = (countsByType[site.type] ?? 0) + 1;
+        countsByVillage[site.village] =
+            (countsByVillage[site.village] ?? 0) + 1;
+      }
+
+      if (!mounted) return;
       setState(() {
-        _stats = results[0] as DashboardStats;
-        _recent = results[1] as List<Site>;
+        _stats = DashboardStats(
+          totalSites: totalSites,
+          registeredToday: firebaseSites.where((s) {
+            final now = DateTime.now();
+            return s.registeredAt.year == now.year &&
+                s.registeredAt.month == now.month &&
+                s.registeredAt.day == now.day;
+          }).length,
+          registeredThisWeek: firebaseSites.where((s) {
+            final now = DateTime.now();
+            final weekStart = now.subtract(Duration(days: now.weekday - 1));
+            return s.registeredAt.isAfter(weekStart);
+          }).length,
+          villageCount: countsByVillage.length,
+          countsByType: countsByType,
+          countsByVillage: countsByVillage,
+        );
+        _recent = allSites.take(5).toList();
         _pendingSync = fieldStats['pendingSync'] ?? 0;
         _currentUser = authUser;
         _loading = false;
@@ -146,6 +204,23 @@ class _DashboardScreenState extends State<DashboardScreen>
         _errorMessage = 'Unable to load dashboard. Pull to refresh.';
         _loading = false;
       });
+    }
+  }
+
+  // FIX: Load sites from Firebase
+  Future<List<Site>> _loadFirebaseSites(String? uid) async {
+    if (uid == null) return [];
+    try {
+      final snapshot = await _firestore
+          .collection('sites')
+          .where('createdByUid', isEqualTo: uid)
+          .orderBy('registeredAt', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+    } catch (e) {
+      debugPrint('Firebase sites load failed: $e');
+      return [];
     }
   }
 
@@ -268,6 +343,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       extendBodyBehindAppBar: true,
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.surface, // FIX: Explicit bg
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -820,7 +898,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   String _getGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'morning';
-
     if (hour < 17) return 'afternoon';
     return 'evening';
   }

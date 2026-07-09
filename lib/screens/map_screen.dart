@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ADD THIS
 import 'package:ruralmap/screens/household_details_screen.dart';
 
 import '../database/db_helper.dart';
@@ -19,14 +20,16 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   bool _loading = true;
   String? _errorMessage;
 
   List<Site> _sites = [];
+  List<Site> _localSites = [];
+  List<Site> _firebaseSites = [];
 
   LatLng _currentLocation = const LatLng(-28.9575, 31.4687);
-
   double? _accuracy;
 
   @override
@@ -52,11 +55,36 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       await _loadLocation();
-      final sites = await DBHelper.instance.getAllSites();
+
+      // Load from both sources
+      final results = await Future.wait([
+        DBHelper.instance.getAllSites(), // Local SQLite
+        _loadFirebaseSites(), // Firebase /sites
+      ]);
+
+      _localSites = results[0] as List<Site>;
+      _firebaseSites = results[1] as List<Site>;
+
+      // Merge: Firebase takes priority, add local sites not in Firebase
+      final Map<String, Site> mergedMap = {};
+
+      // Add Firebase sites first
+      for (final site in _firebaseSites) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty) mergedMap[key] = site;
+      }
+
+      // Add local sites not already in Firebase
+      for (final site in _localSites) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty && !mergedMap.containsKey(key)) {
+          mergedMap[key] = site;
+        }
+      }
 
       if (!mounted) return;
       setState(() {
-        _sites = sites;
+        _sites = mergedMap.values.toList();
         _loading = false;
       });
     } catch (error, stack) {
@@ -67,6 +95,21 @@ class _MapScreenState extends State<MapScreen> {
             'Unable to load map data. Please check permissions and try again.';
         _loading = false;
       });
+    }
+  }
+
+  // FIX: Load sites from Firebase /sites collection
+  Future<List<Site>> _loadFirebaseSites() async {
+    try {
+      final snapshot = await _firestore
+          .collection('sites')
+          .orderBy('registeredAt', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+    } catch (e) {
+      debugPrint('Firebase sites load failed: $e');
+      return []; // Return empty on error, local sites will still show
     }
   }
 
@@ -96,7 +139,6 @@ class _MapScreenState extends State<MapScreen> {
       );
 
       _currentLocation = LatLng(pos.latitude, pos.longitude);
-
       _accuracy = pos.accuracy;
     } catch (error, stack) {
       debugPrint('MapScreen location load failed: $error\n$stack');
@@ -128,13 +170,10 @@ class _MapScreenState extends State<MapScreen> {
     switch (type) {
       case SiteType.house:
         return Colors.green;
-
       case SiteType.business:
         return Colors.orange;
-
       case SiteType.school:
         return Colors.blue;
-
       case SiteType.church:
         return Colors.purple;
     }
@@ -145,6 +184,9 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.surface, // FIX: Explicit bg
       builder: (_) {
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -152,9 +194,7 @@ class _MapScreenState extends State<MapScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.home_work, size: 60, color: AppColors.primary),
-
               const SizedBox(height: 16),
-
               Text(
                 site.name,
                 style: const TextStyle(
@@ -163,16 +203,12 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 8),
-
               Text(
                 '${site.village}, ${site.ward}',
                 style: TextStyle(color: Colors.grey.shade600),
               ),
-
               const SizedBox(height: 12),
-
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -191,7 +227,6 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               ),
-
               if (site.householdHead != null) ...[
                 const SizedBox(height: 8),
                 Row(
@@ -206,7 +241,6 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ],
-
               if (site.phoneNumber != null) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -221,9 +255,7 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ],
-
               const SizedBox(height: 20),
-
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -235,10 +267,7 @@ class _MapScreenState extends State<MapScreen> {
                         builder: (_) => HouseholdDetailsScreen(
                           site: site,
                           onEdit: () {
-                            // Optional: handle edit from details screen
                             Navigator.pop(context); // Close details
-                            // Add your edit logic here, e.g.:
-                            // _showEditDialog(site);
                           },
                         ),
                       ),
@@ -251,7 +280,6 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 8),
             ],
           ),
@@ -263,11 +291,15 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (_errorMessage != null) {
       return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
         body: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -295,6 +327,7 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
       body: Stack(
         children: [
           FlutterMap(
@@ -310,7 +343,6 @@ class _MapScreenState extends State<MapScreen> {
                 urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 userAgentPackageName: "com.mfundo_iphisi.ruralcensus",
               ),
-
               MarkerLayer(
                 markers: [
                   Marker(
@@ -323,13 +355,11 @@ class _MapScreenState extends State<MapScreen> {
                       size: 42,
                     ),
                   ),
-
                   ..._buildMarkers(),
                 ],
               ),
             ],
           ),
-
           Positioned(
             top: 18,
             left: 16,
@@ -344,9 +374,7 @@ class _MapScreenState extends State<MapScreen> {
                 child: Row(
                   children: [
                     const Icon(Icons.gps_fixed),
-
                     const SizedBox(width: 10),
-
                     Expanded(
                       child: Text(
                         _accuracy == null
@@ -354,7 +382,6 @@ class _MapScreenState extends State<MapScreen> {
                             : "GPS Accuracy: ${_accuracy!.toStringAsFixed(1)} m",
                       ),
                     ),
-
                     Chip(label: Text("${_sites.length} Sites")),
                   ],
                 ),
@@ -363,7 +390,6 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -371,35 +397,27 @@ class _MapScreenState extends State<MapScreen> {
             heroTag: "gps",
             onPressed: () async {
               await _loadLocation();
-
               _mapController.move(_currentLocation, 18);
-
               if (mounted) {
                 setState(() {});
               }
             },
             child: const Icon(Icons.my_location),
           ),
-
           const SizedBox(height: 12),
-
           FloatingActionButton.small(
             heroTag: "zoomIn",
             onPressed: () {
               final camera = _mapController.camera;
-
               _mapController.move(camera.center, camera.zoom + 1);
             },
             child: const Icon(Icons.add),
           ),
-
           const SizedBox(height: 12),
-
           FloatingActionButton.small(
             heroTag: "zoomOut",
             onPressed: () {
               final camera = _mapController.camera;
-
               _mapController.move(camera.center, camera.zoom - 1);
             },
             child: const Icon(Icons.remove),

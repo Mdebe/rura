@@ -5,7 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // REQUIRED for Timestamp
 
 import '../database/db_helper.dart';
 import '../providers/auth_provider.dart';
@@ -53,14 +53,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => version = info.version);
   }
 
-  // FIX: Load stats from Firebase for real data
+  // FIX: Proper Timestamp handling + fallback to local
   Future<void> _loadStats() async {
     try {
-      // Get local stats first for quick display
       final localStats = await DBHelper.instance.getFieldStats();
-
-      // Get Firebase count for total sites
       final user = FirebaseAuth.instance.currentUser;
+
       if (user != null) {
         final snapshot = await FirebaseFirestore.instance
             .collection('sites')
@@ -106,7 +104,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
-  // FIX: Sync now uses real Firebase /sites collection
   Future<void> _syncData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
