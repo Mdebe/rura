@@ -104,47 +104,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 
-  Future<void> _syncData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _showMessage('Please log in to sync', color: Colors.orange);
-      return;
-    }
-
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none) ||
-        connectivity.isEmpty) {
-      _showMessage('No internet connection', color: Colors.orange);
-      return;
-    }
-
-    setState(() => _syncing = true);
-    try {
-      final count = await SyncService().fullSync();
-      await _loadStats();
-      if (!mounted) return;
-      _showMessage(
-        count > 0 ? 'Synced $count sites to cloud' : 'All sites already synced',
-        color: Colors.green,
-      );
-    } on FirebaseException catch (e) {
-      if (!mounted) return;
-      if (e.code == 'permission-denied') {
-        _showMessage(
-          'Permission denied. Check Firestore rules.',
-          color: Colors.red,
-        );
-      } else {
-        _showMessage('Sync failed: ${e.message}', color: Colors.red);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage('Sync failed: $e', color: Colors.red);
-    } finally {
-      if (mounted) setState(() => _syncing = false);
-    }
-  }
-
   Future<void> _exportToExcel() async {
     try {
       _showMessage('Generating Excel file...');
@@ -407,46 +366,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                     ),
                     const Divider(),
-                    ListTile(
-                      leading: Icon(
-                        Icons.cloud_upload,
-                        color: pendingCount > 0 ? Colors.orange : Colors.green,
-                      ),
-                      title: const Text("Pending Sync"),
-                      subtitle: Text(
-                        pendingCount > 0 ? 'Tap to sync now' : 'All synced',
-                      ),
-                      trailing: _loadingStats
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                if (pendingCount > 0) ...[
-                                  const SizedBox(width: 8),
-                                  _syncing
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : IconButton(
-                                          icon: const Icon(
-                                            Icons.sync,
-                                            color: Colors.orange,
-                                          ),
-                                          onPressed: _syncData,
-                                        ),
-                                ],
-                              ],
-                            ),
-                      onTap: pendingCount > 0 ? _syncData : null,
-                    ),
                   ],
                 ),
               ),
@@ -455,23 +374,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Card(
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.sync),
-                      title: const Text("Sync Data"),
-                      subtitle: Text(
-                        pendingCount > 0
-                            ? 'Upload $pendingCount unsynced records'
-                            : 'All data synced',
-                      ),
-                      trailing: _syncing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right),
-                      onTap: _syncing ? null : _syncData,
-                    ),
                     const Divider(),
                     ListTile(
                       leading: const Icon(Icons.download),

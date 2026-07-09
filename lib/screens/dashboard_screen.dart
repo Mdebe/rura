@@ -1,3 +1,5 @@
+// ignore_for_file: unused_local_variable
+
 import 'dart:async';
 import 'dart:ui';
 
@@ -44,6 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Data sources kept separately so we can re-merge cheaply on live updates
   // without re-hitting the local database every time Firestore pushes a
   // snapshot.
+  List<Site> _sites = [];
   List<Site> _localSites = [];
   List<Site> _firebaseSites = [];
 
@@ -134,7 +137,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   // LOADING — offline-first: local data is the source of truth for
   // anything not-yet-synced, Firestore fills in / freshens what has.
   // ---------------------------------------------------------------------
-
   Future<void> _load() async {
     if (!mounted) return;
     setState(() {
@@ -147,9 +149,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final user = FirebaseAuth.instance.currentUser;
 
       final results = await Future.wait([
-        DBHelper.instance.getAllSites(),
+        DBHelper.instance.getAllSites(), // Local SQLite
         DBHelper.instance.getFieldStats(),
-        _loadFirebaseSitesOnce(user?.uid),
+        _loadFirebaseSitesOnce(user?.uid), // Firebase /sites
       ]);
 
       final localSites = results[0] as List<Site>;
@@ -159,6 +161,25 @@ class _DashboardScreenState extends State<DashboardScreen>
       _localSites = localSites;
       _firebaseSites = firebaseResult.sites;
 
+      // --- Merge: Firebase takes priority ---
+      final Map<String, Site> mergedMap = {};
+
+      // 1. Add Firebase sites first
+      for (final site in _firebaseSites) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty) mergedMap[key] = site;
+      }
+
+      // 2. Add local sites not already in Firebase
+      for (final site in _localSites) {
+        final key = site.firestoreId ?? site.siteCode;
+        if (key.isNotEmpty && !mergedMap.containsKey(key)) {
+          mergedMap[key] = site;
+        }
+      }
+
+      final mergedSites = mergedMap.values.toList();
+
       if (!mounted) return;
       setState(() {
         _isOnline = firebaseResult.succeeded;
@@ -167,6 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _lastUpdated = DateTime.now();
         _loading = false;
         _errorMessage = null;
+        _sites = mergedSites; // <-- Use the merged list here
       });
       _recompute();
     } catch (error, stack) {

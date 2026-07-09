@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // FIX: For Timestamp
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 
 import '../providers/auth_provider.dart';
@@ -19,86 +19,77 @@ class ViewerHome extends StatefulWidget {
 
 class _ViewerHomeState extends State<ViewerHome> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  int _totalSites = 0;
-  List<Site> _recentSites = [];
-  List<Site> _allSites = [];
-  List<Site> _filteredSites = [];
-  bool _loading = true;
+  final TextEditingController _searchController = TextEditingController();
+
   String _searchQuery = '';
+  String? _errorMessage;
+  bool _initialLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _loadNotifications();
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text);
+    });
+    _initialLoad();
   }
 
-  Future<void> _loadData() async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initialLoad() async {
+    setState(() {
+      _initialLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
+      if (user == null) throw Exception('Not authenticated');
+      setState(() => _initialLoading = false);
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load. Check connection and retry.';
+        _initialLoading = false;
+      });
+    }
+  }
 
-      final results = await Future.wait([
-        _firestore.collection('sites').count().get(),
-        _firestore
-            .collection('sites')
-            .where('createdByUid', isEqualTo: user.uid) // Filter by user
-            .orderBy('registeredAt', descending: true)
-            .get(),
-      ]);
-
-      if (mounted) {
-        final querySnapshot = results[1] as QuerySnapshot<Map<String, dynamic>>;
-        final sites = querySnapshot.docs
-            .map((doc) => Site.fromFirestore(doc))
-            .toList();
-
-        setState(() {
-          _totalSites = (results[0] as AggregateQuerySnapshot).count ?? 0;
-          _allSites = sites;
-          _filteredSites = sites;
-          _recentSites = sites.take(3).toList();
-          _loading = false;
+  // FIX: Removed.where('createdByUid') - now gets ALL sites
+  Stream<List<Site>> _sitesStream() {
+    return _firestore
+        .collection('sites')
+        .orderBy('registeredAt', descending: true)
+        .limit(50) // Limit to 50 most recent to avoid reading entire DB
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => Site.fromFirestore(doc)).toList())
+        .handleError((e) {
+          debugPrint('Sites stream error: $e');
+          return <Site>[];
         });
-      }
-    } catch (e) {
-      debugPrint('Error loading viewer data: $e');
-      if (mounted) setState(() => _loading = false);
-    }
   }
 
-  Future<void> _loadNotifications() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('read', isEqualTo: false)
-          .get();
-    } catch (e) {
-      debugPrint('Error loading notifications: $e');
-    }
+  // For total count - use aggregation query, reads metadata only
+  Stream<int> _totalSitesStream() {
+    return _firestore
+        .collection('sites')
+        .count()
+        .get()
+        .then((snapshot) => snapshot.count ?? 0)
+        .asStream();
   }
 
-  void _searchSites(String query) {
-    setState(() {
-      _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredSites = _allSites;
-      } else {
-        final lowerQuery = query.toLowerCase();
-        _filteredSites = _allSites.where((site) {
-          return site.name.toLowerCase().contains(lowerQuery) ||
-              site.siteCode.toLowerCase().contains(lowerQuery) ||
-              site.village.toLowerCase().contains(lowerQuery);
-        }).toList();
-      }
-    });
+  List<Site> _filterSites(List<Site> sites) {
+    if (_searchQuery.isEmpty) return sites;
+    final lowerQuery = _searchQuery.toLowerCase();
+    return sites.where((site) {
+      return site.name.toLowerCase().contains(lowerQuery) ||
+          site.siteCode.toLowerCase().contains(lowerQuery) ||
+          site.village.toLowerCase().contains(lowerQuery);
+    }).toList();
   }
 
   void _showSiteDetails(Site site) {
@@ -106,16 +97,18 @@ class _ViewerHomeState extends State<ViewerHome> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.5,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(24),
             children: [
               Center(
                 child: Container(
@@ -139,19 +132,26 @@ class _ViewerHomeState extends State<ViewerHome> {
               const SizedBox(height: 16),
               _buildDetailRow(Icons.home, 'Site Name', site.name),
               const SizedBox(height: 16),
+              _buildDetailRow(Icons.location_city, 'Village', site.village),
+              const SizedBox(height: 16),
               _buildDetailRow(
                 Icons.directions,
                 'Directions',
                 site.directions.isEmpty ? 'Not provided' : site.directions,
               ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                  label: const Text('Close'),
-                ),
+              const SizedBox(height: 16),
+
+              const SizedBox(height: 16),
+              _buildDetailRow(
+                Icons.calendar_today,
+                'Registered',
+                site.registeredAt.toLocal().toString().split(' ')[0],
+              ),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+                label: const Text('Close'),
               ),
             ],
           ),
@@ -161,10 +161,11 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Widget _buildDetailRow(IconData icon, String label, String value) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        Icon(icon, size: 20, color: colorScheme.primary),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -174,7 +175,7 @@ class _ViewerHomeState extends State<ViewerHome> {
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -195,41 +196,97 @@ class _ViewerHomeState extends State<ViewerHome> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().currentUser;
+    final authUser = context.watch<AuthProvider>().currentUser;
 
-    if (user == null) {
+    if (authUser == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_initialLoading) {
+      return Scaffold(
+        appBar: _buildAppBar(authUser),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: _buildAppBar(authUser),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                const SizedBox(height: 16),
+                Text(_errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _initialLoad,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: _buildAppBar(user),
-      drawer: _buildDrawer(user),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildWelcomeCard(user),
-                    const SizedBox(height: 24),
-                    _buildStatsGrid(),
-                    const SizedBox(height: 24),
-                    _buildSearchBar(),
-                    const SizedBox(height: 16),
-                    _buildQuickActions(),
-                    const SizedBox(height: 24),
-                    _buildRecentSites(),
-                    const SizedBox(height: 24),
-                    _buildInfoBanner(),
-                  ],
+      appBar: _buildAppBar(authUser),
+      drawer: _buildDrawer(authUser),
+      body: StreamBuilder<List<Site>>(
+        stream: _sitesStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          final allSites = snapshot.data ?? [];
+          final filteredSites = _filterSites(allSites);
+          final recentSites = allSites.take(3).toList();
+
+          return RefreshIndicator(
+            onRefresh: _initialLoad,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                _buildWelcomeCard(authUser),
+                const SizedBox(height: 24),
+                StreamBuilder<int>(
+                  stream: _totalSitesStream(),
+                  builder: (context, countSnap) {
+                    return _buildStatsGrid(countSnap.data ?? allSites.length);
+                  },
                 ),
-              ),
+                const SizedBox(height: 24),
+                _buildSearchBar(),
+                const SizedBox(height: 16),
+                _buildQuickActions(),
+                const SizedBox(height: 24),
+                _buildRecentSites(
+                  displaySites: _searchQuery.isNotEmpty
+                      ? filteredSites
+                      : recentSites,
+                  isSearching: _searchQuery.isNotEmpty,
+                  totalResults: filteredSites.length,
+                ),
+                const SizedBox(height: 24),
+                _buildInfoBanner(),
+                const SizedBox(height: 20),
+              ],
             ),
+          );
+        },
+      ),
     );
   }
 
@@ -270,31 +327,28 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Widget _buildDrawer(AppUser user) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Drawer(
       child: SafeArea(
         child: Column(
           children: [
             UserAccountsDrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-              ),
+              decoration: BoxDecoration(color: colorScheme.primaryContainer),
               accountName: Text(
                 user.name,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  color: colorScheme.onPrimaryContainer,
                 ),
               ),
               accountEmail: Text(
                 user.email,
                 style: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
                 ),
               ),
               currentAccountPicture: CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: colorScheme.primary,
                 child: Text(
                   user.name.isNotEmpty ? user.name[0].toUpperCase() : 'V',
                   style: const TextStyle(
@@ -318,7 +372,7 @@ class _ViewerHomeState extends State<ViewerHome> {
             ),
             ListTile(
               leading: const Icon(Icons.list_alt),
-              title: const Text('View Sites'),
+              title: const Text('View All Sites'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -338,6 +392,7 @@ class _ViewerHomeState extends State<ViewerHome> {
                 );
               },
             ),
+            const Spacer(),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
@@ -347,6 +402,7 @@ class _ViewerHomeState extends State<ViewerHome> {
                 await context.read<AuthProvider>().logout();
               },
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -354,19 +410,20 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Widget _buildWelcomeCard(AppUser user) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Theme.of(context).colorScheme.primary,
-            Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+            colorScheme.primary,
+            colorScheme.primary.withValues(alpha: 0.8),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+            color: colorScheme.primary.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -398,9 +455,9 @@ class _ViewerHomeState extends State<ViewerHome> {
               color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
-              '${user.role} • Read-only access',
-              style: const TextStyle(
+            child: const Text(
+              'Viewer • Read-only access to all sites',
+              style: TextStyle(
                 color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -412,13 +469,13 @@ class _ViewerHomeState extends State<ViewerHome> {
     );
   }
 
-  Widget _buildStatsGrid() {
+  Widget _buildStatsGrid(int totalSites) {
     return Row(
       children: [
         Expanded(
           child: _buildStatCard(
             'Total Sites',
-            '$_totalSites',
+            '$totalSites',
             Icons.home_work,
             Colors.green,
           ),
@@ -427,8 +484,8 @@ class _ViewerHomeState extends State<ViewerHome> {
         Expanded(
           child: _buildStatCard(
             'Access Level',
-            'Viewer',
-            Icons.visibility,
+            'All Sites',
+            Icons.public,
             Colors.blue,
           ),
         ),
@@ -442,14 +499,13 @@ class _ViewerHomeState extends State<ViewerHome> {
     IconData icon,
     Color color,
   ) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,7 +524,7 @@ class _ViewerHomeState extends State<ViewerHome> {
           Text(
             label,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              color: colorScheme.onSurfaceVariant,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -480,15 +536,15 @@ class _ViewerHomeState extends State<ViewerHome> {
 
   Widget _buildSearchBar() {
     return TextField(
-      onChanged: _searchSites,
+      controller: _searchController,
       decoration: InputDecoration(
-        hintText: 'Search by site name, code, or village...',
+        hintText: 'Search all sites by name, code, or village...',
         prefixIcon: const Icon(Icons.search),
         suffixIcon: _searchQuery.isNotEmpty
             ? IconButton(
                 icon: const Icon(Icons.clear),
                 onPressed: () {
-                  _searchSites('');
+                  _searchController.clear();
                   FocusScope.of(context).unfocus();
                 },
               )
@@ -544,8 +600,9 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Widget _buildActionCard(String title, IconData icon, VoidCallback onTap) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -554,14 +611,11 @@ class _ViewerHomeState extends State<ViewerHome> {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              Icon(
-                icon,
-                size: 36,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              Icon(icon, size: 36, color: colorScheme.primary),
               const SizedBox(height: 12),
               Text(
                 title,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -574,11 +628,11 @@ class _ViewerHomeState extends State<ViewerHome> {
     );
   }
 
-  Widget _buildRecentSites() {
-    final displaySites = _searchQuery.isNotEmpty
-        ? _filteredSites
-        : _recentSites;
-
+  Widget _buildRecentSites({
+    required List<Site> displaySites,
+    required bool isSearching,
+    required int totalResults,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -586,14 +640,12 @@ class _ViewerHomeState extends State<ViewerHome> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              _searchQuery.isNotEmpty
-                  ? 'Search Results (${_filteredSites.length})'
-                  : 'Recent Sites',
+              isSearching ? 'Results ($totalResults)' : 'Recent Sites',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
-            if (_searchQuery.isEmpty)
+            if (!isSearching)
               TextButton(
                 onPressed: () => Navigator.push(
                   context,
@@ -605,86 +657,124 @@ class _ViewerHomeState extends State<ViewerHome> {
         ),
         const SizedBox(height: 12),
         if (displaySites.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Center(
-              child: Text(
-                _searchQuery.isNotEmpty
-                    ? 'No sites found'
-                    : 'No sites available yet',
-              ),
-            ),
-          )
+          _buildEmptyState(isSearching)
         else
-          ...displaySites.map(
-            (site) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.location_on,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                title: Text(
-                  site.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text('Code: ${site.siteCode}'),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Directions: ${site.directions.isEmpty ? 'Not provided' : site.directions}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-                trailing: Icon(
-                  Icons.chevron_right,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                onTap: () => _showSiteDetails(site),
-              ),
-            ),
-          ),
+          ...displaySites.map((site) => _buildSiteTile(site)),
       ],
     );
   }
 
+  Widget _buildEmptyState(bool isSearching) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              isSearching ? Icons.search_off : Icons.inbox_outlined,
+              size: 48,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              isSearching
+                  ? 'No sites match "$_searchQuery"'
+                  : 'No sites available yet',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSiteTile(Site site) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(Icons.location_on, color: colorScheme.primary),
+        ),
+        title: Text(
+          site.name,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text('Code: ${site.siteCode}'),
+            const SizedBox(height: 2),
+            Text(
+              'Village: ${site.village}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'By: ${site.createdByName!.isEmpty ? 'Unknown' : site.createdByName}',
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        trailing: Icon(
+          Icons.chevron_right,
+          color: colorScheme.onSurfaceVariant,
+        ),
+        onTap: () => _showSiteDetails(site),
+      ),
+    );
+  }
+
   Widget _buildInfoBanner() {
+    // ignore: unused_local_variable
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: isDark
+            ? Colors.blue.shade900.withValues(alpha: 0.3)
+            : Colors.blue.shade50,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blue.shade100),
+        border: Border.all(
+          color: isDark ? Colors.blue.shade700 : Colors.blue.shade100,
+        ),
       ),
       child: Row(
         children: [
           Icon(Icons.info_outline, color: Colors.blue.shade700),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
-              'You have read-only access. You can view site details but cannot add or edit data.',
-              style: TextStyle(fontSize: 13),
+              'You have read-only access to all sites in the system. You can view details but cannot add or edit data.',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.blue.shade100 : null,
+              ),
             ),
           ),
         ],
