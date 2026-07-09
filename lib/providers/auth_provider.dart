@@ -58,18 +58,23 @@ class AuthProvider with ChangeNotifier {
 
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
-          final now = DateTime.now();
-          await docRef.update({'lastLogin': now.toIso8601String()});
-          await DBHelper.instance.updateUser(
-            _currentUser!.copyWith(lastLogin: now),
-          );
-          _currentUser = _currentUser!.copyWith(lastLogin: now);
+          // FIX: Use server timestamp instead of DateTime.now().toIso8601String()
+          await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+
+          // Fetch updated doc to get server timestamp back
+          final updatedDoc = await docRef.get();
+          _currentUser = AppUser.fromMap(updatedDoc.data()!);
+          await DBHelper.instance.updateUser(_currentUser!);
         } else {
           _currentUser = await DBHelper.instance.getUserByEmail(
             firebaseUser.email!,
           );
           if (_currentUser != null) {
-            await docRef.set(_currentUser!.toMap());
+            // FIX: Use server timestamp for new user
+            final data = _currentUser!.toMap();
+            data['lastLogin'] = FieldValue.serverTimestamp();
+            data['createdAt'] = FieldValue.serverTimestamp();
+            await docRef.set(data);
           }
         }
       } catch (e) {
@@ -79,7 +84,7 @@ class AuthProvider with ChangeNotifier {
     } else {
       _currentUser = null;
     }
-    _isLoaded = true; // FIX: Always set this
+    _isLoaded = true;
     notifyListeners();
   }
 
@@ -97,24 +102,35 @@ class AuthProvider with ChangeNotifier {
       final doc = await docRef.get();
 
       AppUser localUser;
-      final now = DateTime.now();
 
       if (!doc.exists) {
+        // FIX: Use server timestamp for createdAt
         localUser = AppUser(
           name: cred.user?.displayName ?? 'User',
           email: email.trim(),
           phone: '',
-          role: 'Viewer', // CHANGED: Default to Viewer instead of Enumerator
-          createdAt: now,
-          lastLogin: now,
+          role: 'Viewer',
+          createdAt: DateTime.now(), // Will be overwritten by server
+          lastLogin: DateTime.now(),
         );
 
-        await docRef.set(localUser.toMap());
+        final data = localUser.toMap();
+        data['createdAt'] = FieldValue.serverTimestamp();
+        data['lastLogin'] = FieldValue.serverTimestamp();
+        await docRef.set(data);
+
+        // Fetch back to get actual server timestamps
+        final newDoc = await docRef.get();
+        localUser = AppUser.fromMap(newDoc.data()!);
         await DBHelper.instance.insertUser(localUser);
       } else {
         localUser = AppUser.fromMap(doc.data()!);
-        await docRef.update({'lastLogin': now.toIso8601String()});
-        localUser = localUser.copyWith(lastLogin: now);
+        // FIX: Use server timestamp
+        await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+
+        // Fetch updated doc
+        final updatedDoc = await docRef.get();
+        localUser = AppUser.fromMap(updatedDoc.data()!);
       }
 
       _currentUser = localUser;
@@ -143,21 +159,29 @@ class AuthProvider with ChangeNotifier {
 
       await cred.user?.updateDisplayName(name.trim());
 
-      final now = DateTime.now();
       final user = AppUser(
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        role: role, // Role passed from RegisterScreen
-        createdAt: now,
-        lastLogin: now,
+        role: role,
+        createdAt: DateTime.now(),
+        lastLogin: DateTime.now(),
       );
 
-      await _firestore
+      // FIX: Use server timestamps
+      final data = user.toMap();
+      data['createdAt'] = FieldValue.serverTimestamp();
+      data['lastLogin'] = FieldValue.serverTimestamp();
+
+      await _firestore.collection('users').doc(cred.user!.uid).set(data);
+
+      // Fetch back to get server timestamps
+      final doc = await _firestore
           .collection('users')
           .doc(cred.user!.uid)
-          .set(user.toMap());
-      await DBHelper.instance.insertUser(user);
+          .get();
+      final savedUser = AppUser.fromMap(doc.data()!);
+      await DBHelper.instance.insertUser(savedUser);
       await _firebaseAuth.signOut();
 
       return null;
