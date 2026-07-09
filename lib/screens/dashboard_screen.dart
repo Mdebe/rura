@@ -1,9 +1,11 @@
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // ADD THIS
-import 'dart:ui';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
@@ -39,13 +41,24 @@ class _DashboardScreenState extends State<DashboardScreen>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Data sources kept separately so we can re-merge cheaply on live updates
+  // without re-hitting the local database every time Firestore pushes a
+  // snapshot.
+  List<Site> _localSites = [];
+  List<Site> _firebaseSites = [];
+
   DashboardStats _stats = DashboardStats.empty();
   List<Site> _recent = [];
   AppUser? _currentUser;
+
   bool _loading = true;
   bool _syncing = false;
+  bool _isOnline = false;
   String? _errorMessage;
   int _pendingSync = 0;
+  DateTime? _lastUpdated;
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
 
   late AnimationController _headerAnimController;
   late AnimationController _cardAnimController;
@@ -85,6 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   void dispose() {
+    _liveSub?.cancel();
     _headerAnimController.dispose();
     _cardAnimController.dispose();
     super.dispose();
@@ -102,6 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     try {
       await DBHelper.instance.database;
       await _load();
+      _startLiveSync();
       _headerAnimController.forward();
       await Future.delayed(const Duration(milliseconds: 200));
       _cardAnimController.forward();
@@ -115,7 +130,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // FIX: Load from both Firebase + Local and merge
+  // ---------------------------------------------------------------------
+  // LOADING — offline-first: local data is the source of truth for
+  // anything not-yet-synced, Firestore fills in / freshens what has.
+  // ---------------------------------------------------------------------
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() {
@@ -127,76 +146,29 @@ class _DashboardScreenState extends State<DashboardScreen>
       final authUser = context.read<AuthProvider>().currentUser;
       final user = FirebaseAuth.instance.currentUser;
 
-      // Load from Firebase and Local in parallel
       final results = await Future.wait([
-        _loadFirebaseSites(user?.uid),
-        DBHelper.instance.getAllSites(limit: 5),
+        DBHelper.instance.getAllSites(),
         DBHelper.instance.getFieldStats(),
+        _loadFirebaseSitesOnce(user?.uid),
       ]);
 
-      final firebaseSites = results[0] as List<Site>;
-      final localRecent = results[1] as List<Site>;
-      final fieldStats = results[2] as Map<String, int>;
+      final localSites = results[0] as List<Site>;
+      final fieldStats = results[1] as Map<String, int>;
+      final firebaseResult = results[2] as _FirebaseFetchResult;
 
-      // Merge sites: Firebase takes priority, deduplicate by firestore_id or siteCode
-      final Map<String, Site> mergedMap = {};
-
-      for (final site in firebaseSites) {
-        final key = site.firestoreId ?? site.siteCode;
-        if (key.isNotEmpty) mergedMap[key] = site;
-      }
-
-      for (final site in localRecent) {
-        final key = site.firestoreId ?? site.siteCode;
-        if (key.isNotEmpty && !mergedMap.containsKey(key)) {
-          mergedMap[key] = site;
-        }
-      }
-
-      final allSites = mergedMap.values.toList();
-      allSites.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
-
-      // Calculate stats from merged data
-      final totalSites =
-          firebaseSites.length; // Use Firebase count as source of truth
-      final gpsCaptured = firebaseSites
-          .where((s) => s.latitude != null && s.longitude != null)
-          .length;
-
-      final Map<SiteType, int> countsByType = {};
-      final Map<String, int> countsByVillage = {};
-
-      for (final site in firebaseSites) {
-        countsByType[site.type] = (countsByType[site.type] ?? 0) + 1;
-        countsByVillage[site.village] =
-            (countsByVillage[site.village] ?? 0) + 1;
-      }
+      _localSites = localSites;
+      _firebaseSites = firebaseResult.sites;
 
       if (!mounted) return;
       setState(() {
-        _stats = DashboardStats(
-          totalSites: totalSites,
-          registeredToday: firebaseSites.where((s) {
-            final now = DateTime.now();
-            return s.registeredAt.year == now.year &&
-                s.registeredAt.month == now.month &&
-                s.registeredAt.day == now.day;
-          }).length,
-          registeredThisWeek: firebaseSites.where((s) {
-            final now = DateTime.now();
-            final weekStart = now.subtract(Duration(days: now.weekday - 1));
-            return s.registeredAt.isAfter(weekStart);
-          }).length,
-          villageCount: countsByVillage.length,
-          countsByType: countsByType,
-          countsByVillage: countsByVillage,
-        );
-        _recent = allSites.take(5).toList();
-        _pendingSync = fieldStats['pendingSync'] ?? 0;
+        _isOnline = firebaseResult.succeeded;
         _currentUser = authUser;
+        _pendingSync = fieldStats['pendingSync'] ?? 0;
+        _lastUpdated = DateTime.now();
         _loading = false;
         _errorMessage = null;
       });
+      _recompute();
     } catch (error, stack) {
       debugPrint('Dashboard load failed: $error\n$stack');
       if (!mounted) return;
@@ -207,22 +179,120 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // FIX: Load sites from Firebase
-  Future<List<Site>> _loadFirebaseSites(String? uid) async {
-    if (uid == null) return [];
+  Future<_FirebaseFetchResult> _loadFirebaseSitesOnce(String? uid) async {
+    if (uid == null) return _FirebaseFetchResult(sites: [], succeeded: false);
     try {
       final snapshot = await _firestore
           .collection('sites')
           .where('createdByUid', isEqualTo: uid)
           .orderBy('registeredAt', descending: true)
-          .get();
-
-      return snapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+          .get(const GetOptions(source: Source.serverAndCache));
+      return _FirebaseFetchResult(
+        sites: snapshot.docs.map((doc) => Site.fromFirestore(doc)).toList(),
+        succeeded: true,
+      );
     } catch (e) {
       debugPrint('Firebase sites load failed: $e');
-      return [];
+      return _FirebaseFetchResult(sites: [], succeeded: false);
     }
   }
+
+  /// Keeps the dashboard fresh in real time: any change to this user's
+  /// documents on the server streams straight back in without a manual
+  /// refresh or a full-screen loading spinner.
+  void _startLiveSync() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    _liveSub?.cancel();
+    _liveSub = _firestore
+        .collection('sites')
+        .where('createdByUid', isEqualTo: uid)
+        .orderBy('registeredAt', descending: true)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+            _firebaseSites = snapshot.docs
+                .map((doc) => Site.fromFirestore(doc))
+                .toList();
+            setState(() {
+              _isOnline = true;
+              _lastUpdated = DateTime.now();
+            });
+            _recompute();
+          },
+          onError: (error) {
+            debugPrint('Live sync error: $error');
+            if (!mounted) return;
+            setState(() => _isOnline = false);
+          },
+        );
+  }
+
+  /// Merges local + cloud data and recalculates every derived value shown
+  /// on screen. Cheap enough to call on every snapshot tick.
+  void _recompute() {
+    final merged = _mergeSites(_localSites, _firebaseSites);
+    merged.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
+
+    final Map<SiteType, int> countsByType = {};
+    final Map<String, int> countsByVillage = {};
+    int gpsCaptured = 0;
+    int today = 0;
+    int week = 0;
+
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    final startOfToday = DateTime(now.year, now.month, now.day);
+
+    for (final site in merged) {
+      countsByType[site.type] = (countsByType[site.type] ?? 0) + 1;
+      if (site.village.isNotEmpty) {
+        countsByVillage[site.village] =
+            (countsByVillage[site.village] ?? 0) + 1;
+      }
+      if (site.latitude != null && site.longitude != null) gpsCaptured++;
+      if (!site.registeredAt.isBefore(startOfToday)) today++;
+      if (!site.registeredAt.isBefore(weekStart)) week++;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _stats = DashboardStats(
+        totalSites: merged.length,
+        registeredToday: today,
+        registeredThisWeek: week,
+        villageCount: countsByVillage.length,
+        countsByType: countsByType,
+        countsByVillage: countsByVillage,
+      );
+      _recent = merged.take(5).toList();
+    });
+  }
+
+  /// Local is authoritative for anything that hasn't synced yet (isSynced
+  /// == false / no firestoreId). For records that exist in both places,
+  /// the cloud copy wins since it reflects the latest state across every
+  /// device the user has registered from.
+  List<Site> _mergeSites(List<Site> local, List<Site> firebase) {
+    final Map<String, Site> merged = {};
+
+    for (final site in local) {
+      final key = site.firestoreId ?? 'local:${site.id ?? site.siteCode}';
+      merged[key] = site;
+    }
+    for (final site in firebase) {
+      final key = site.firestoreId ?? 'remote:${site.siteCode}';
+      merged[key] = site; // cloud copy overrides local once synced
+    }
+
+    return merged.values.toList();
+  }
+
+  // ---------------------------------------------------------------------
+  // ACTIONS
+  // ---------------------------------------------------------------------
 
   Future<void> _syncToFirebase() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -242,7 +312,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      _showSnack('Sync failed: ${e.toString()}', isError: true);
+      _showSnack('Sync failed: check your connection', isError: true);
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
@@ -343,9 +413,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface, // FIX: Explicit bg
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -360,38 +428,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
         child: _loading
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.2),
-                            blurRadius: 20,
-                          ),
-                        ],
-                      ),
-                      child: const CircularProgressIndicator(
-                        color: AppColors.primary,
-                        strokeWidth: 3,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Loading dashboard...',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              )
+            ? _buildSkeleton()
             : _errorMessage != null
             ? _buildError()
             : RefreshIndicator(
@@ -424,6 +461,49 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // LOADING / ERROR STATES
+  // ---------------------------------------------------------------------
+
+  Widget _buildSkeleton() {
+    Widget block({double height = 20, double? width, double radius = 10}) {
+      return Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+      physics: const NeverScrollableScrollPhysics(),
+      children: [
+        block(height: 16, width: 180),
+        const SizedBox(height: 10),
+        block(height: 28, width: 240),
+        const SizedBox(height: 24),
+        block(height: 160, radius: 25),
+        const SizedBox(height: 32),
+        block(height: 16, width: 140),
+        const SizedBox(height: 16),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          childAspectRatio: 0.95,
+          children: List.generate(4, (_) => block(radius: 20)),
+        ),
+        const SizedBox(height: 32),
+        block(height: 220, radius: 24),
+      ],
     );
   }
 
@@ -481,6 +561,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  // ---------------------------------------------------------------------
+  // HEADER
+  // ---------------------------------------------------------------------
+
   Widget _buildHeader(String today) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -521,34 +605,72 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ),
         const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.calendar_today_outlined,
-                size: 16,
-                color: Colors.grey.shade700,
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
               ),
-              const SizedBox(width: 8),
-              Text(
-                today,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade700,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 16,
+                    color: Colors.grey.shade700,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    today,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            _buildStatusChip(),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildStatusChip() {
+    final color = _isOnline ? Colors.green : Colors.grey.shade500;
+    final label = _isOnline ? 'Live' : 'Offline';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -622,6 +744,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  // ---------------------------------------------------------------------
+  // HERO
+  // ---------------------------------------------------------------------
+
   Widget _buildHeroCard() {
     return Container(
       decoration: BoxDecoration(
@@ -655,6 +781,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
   }
+
+  // ---------------------------------------------------------------------
+  // QUICK ACTIONS
+  // ---------------------------------------------------------------------
 
   Widget _buildQuickActions(int columns, bool isAdmin) {
     return Column(
@@ -794,6 +924,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  // ---------------------------------------------------------------------
+  // SITE TYPES
+  // ---------------------------------------------------------------------
+
   Widget _buildSiteTypes(int columns, int totalTypeCount) {
     return _glassCard(
       child: Padding(
@@ -827,6 +961,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
   }
+
+  // ---------------------------------------------------------------------
+  // RECENT
+  // ---------------------------------------------------------------------
 
   Widget _buildRecent() {
     return _glassCard(
@@ -862,12 +1000,31 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               )
             else
-              ..._recent.map((s) => RecentRegistrationTile(site: s)),
+              ..._recent.map(
+                (s) => AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: RecentRegistrationTile(
+                    key: ValueKey(s.firestoreId ?? s.id ?? s.siteCode),
+                    site: s,
+                  ),
+                ),
+              ),
+            if (_lastUpdated != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Updated ${DateFormat('HH:mm:ss').format(_lastUpdated!)}',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  // ---------------------------------------------------------------------
+  // TOP VILLAGES
+  // ---------------------------------------------------------------------
 
   Widget _buildTopVillages(int totalVillageCount, int maxVillageCount) {
     return _glassCard(
@@ -901,4 +1058,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (hour < 17) return 'afternoon';
     return 'evening';
   }
+}
+
+class _FirebaseFetchResult {
+  final List<Site> sites;
+  final bool succeeded;
+
+  _FirebaseFetchResult({required this.sites, required this.succeeded});
 }
