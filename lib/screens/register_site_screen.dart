@@ -7,8 +7,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
@@ -434,7 +432,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     setState(() => _currentStep = (_currentStep - 1).clamp(0, _stepCount - 1));
   }
 
-  // FIX: Save to flat /sites collection, not nested under users
+  // FIX: Only save to SQLite, mark as unsynced
   Future<void> _saveSite() async {
     if (!_validateStep()) return;
     setState(() => _saving = true);
@@ -449,8 +447,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     final distanceFromLandmark = double.tryParse(
       _distanceController.text.trim(),
     );
-
-    final currentUser = FirebaseAuth.instance.currentUser;
 
     final site = Site(
       siteCode: _siteCodeController.text,
@@ -505,31 +501,19 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       employedCount: int.tryParse(employedController.text),
       unemployedCount: int.tryParse(unemployedController.text),
       grantRecipients: int.tryParse(grantRecipientsController.text),
-      createdBy: currentUser?.email,
-      createdByUid: currentUser?.uid,
-      createdByName: currentUser?.displayName,
+      isSynced: false, // FIX: Mark as unsynced for dashboard sync
     );
 
     try {
-      // FIX: Save to flat /sites collection
-      final docRef = FirebaseFirestore.instance.collection('sites').doc();
-
-      final data = site.toMap();
-      data['firestoreId'] = docRef.id;
-      data['isSynced'] = true;
-      data['lastUpdated'] = FieldValue.serverTimestamp();
-      data['createdAt'] = FieldValue.serverTimestamp();
-
-      await docRef.set(data);
-
-      // Update local DB
-      final savedSite = site.copyWith(firestoreId: docRef.id, isSynced: true);
-      await DBHelper.instance.insertSite(savedSite);
+      // Only save to local DB - sync happens from dashboard
+      await DBHelper.instance.insertSite(site);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Site ${site.siteCode} saved to cloud'),
+            content: Text(
+              'Site ${site.siteCode} saved locally. Sync from dashboard.',
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
