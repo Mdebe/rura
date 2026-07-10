@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ruralmap/screens/privacy_screen.dart';
+import 'package:ruralmap/screens/terms_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HelpScreen extends StatelessWidget {
@@ -66,13 +68,24 @@ class HelpScreen extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip),
-            title: const Text('Privacy Policy'),
-            onTap: () => _launchUrl('https://georura.co.za/privacy'),
+            title: const Text("Privacy Policy"),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const PrivacyScreen()));
+            },
           ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.description),
-            title: const Text('Terms of Service'),
-            onTap: () => _launchUrl('https://georura.co.za/terms'),
+            title: const Text("Terms & Conditions"),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const TermsScreen()));
+            },
           ),
         ],
       ),

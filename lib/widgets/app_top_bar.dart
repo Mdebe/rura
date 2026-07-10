@@ -11,9 +11,9 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   final PreferredSizeWidget? bottom;
   final VoidCallback? onMenuPressed; // For drawer hamburger
   final VoidCallback? onRefreshLocation;
-  final bool showHamburger; // Changed from showMenu
+  final bool showHamburger;
   final bool showLocationRefresh;
-  final bool showActionsMenu; // Changed from showMenu - this is 3-dot
+  final bool showActionsMenu;
 
   const GeoRuraAppBar({
     super.key,
@@ -27,7 +27,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onRefreshLocation,
     this.showHamburger = false,
     this.showLocationRefresh = false,
-    this.showActionsMenu = true, // Default true for 3-dot menu
+    this.showActionsMenu = true,
   });
 
   @override
@@ -38,7 +38,6 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final List<Widget> allActions = [];
 
-    // Add location refresh if enabled
     if (showLocationRefresh) {
       allActions.add(
         IconButton(
@@ -49,12 +48,10 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    // Add custom actions
     if (actions != null) {
       allActions.addAll(actions!);
     }
 
-    // Add 3-dot overflow menu if enabled
     if (showActionsMenu) {
       allActions.add(
         PopupMenuButton<String>(
@@ -198,10 +195,8 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   Widget? _buildLeading(BuildContext context) {
-    // Custom leading takes priority
     if (leading != null) return leading;
 
-    // Show hamburger if enabled
     if (showHamburger) {
       return IconButton(
         icon: const Icon(Icons.menu_rounded),
@@ -210,7 +205,6 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    // Let AppBar handle back button automatically
     return null;
   }
 
