@@ -29,7 +29,7 @@ class _ViewerHomeState extends State<ViewerHome> {
   void initState() {
     super.initState();
     _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text);
+      if (mounted) setState(() => _searchQuery = _searchController.text);
     });
     _initialLoad();
   }
@@ -41,6 +41,7 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Future<void> _initialLoad() async {
+    if (!mounted) return;
     setState(() {
       _initialLoading = true;
       _errorMessage = null;
@@ -49,8 +50,11 @@ class _ViewerHomeState extends State<ViewerHome> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not authenticated');
+      if (!mounted) return;
       setState(() => _initialLoading = false);
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Initial load error: $e\n$stack');
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load. Check connection and retry.';
         _initialLoading = false;
@@ -58,28 +62,30 @@ class _ViewerHomeState extends State<ViewerHome> {
     }
   }
 
-  // FIX: Removed.where('createdByUid') - now gets ALL sites
   Stream<List<Site>> _sitesStream() {
-    return _firestore
-        .collection('sites')
-        .orderBy('registeredAt', descending: true)
-        .limit(50) // Limit to 50 most recent to avoid reading entire DB
-        .snapshots()
-        .map((snap) => snap.docs.map((doc) => Site.fromFirestore(doc)).toList())
-        .handleError((e) {
-          debugPrint('Sites stream error: $e');
-          return <Site>[];
-        });
-  }
-
-  // For total count - use aggregation query, reads metadata only
-  Stream<int> _totalSitesStream() {
-    return _firestore
-        .collection('sites')
-        .count()
-        .get()
-        .then((snapshot) => snapshot.count ?? 0)
-        .asStream();
+    try {
+      return _firestore
+          .collection('sites')
+          .orderBy('registeredAt', descending: true)
+          .limit(50)
+          .snapshots()
+          .map((snap) {
+            return snap.docs
+                .map((doc) {
+                  try {
+                    return Site.fromFirestore(doc);
+                  } catch (e) {
+                    debugPrint('Failed to parse site ${doc.id}: $e');
+                    return null;
+                  }
+                })
+                .whereType<Site>()
+                .toList();
+          });
+    } catch (e) {
+      debugPrint('Stream setup error: $e');
+      return Stream.value([]);
+    }
   }
 
   List<Site> _filterSites(List<Site> sites) {
@@ -140,7 +146,13 @@ class _ViewerHomeState extends State<ViewerHome> {
                 site.directions.isEmpty ? 'Not provided' : site.directions,
               ),
               const SizedBox(height: 16),
-
+              _buildDetailRow(
+                Icons.person,
+                'Created By',
+                site.createdByName?.isEmpty ?? true
+                    ? 'Unknown'
+                    : site.createdByName!,
+              ),
               const SizedBox(height: 16),
               _buildDetailRow(
                 Icons.calendar_today,
@@ -241,13 +253,45 @@ class _ViewerHomeState extends State<ViewerHome> {
       body: StreamBuilder<List<Site>>(
         stream: _sitesStream(),
         builder: (context, snapshot) {
+          // CRITICAL: Handle all stream states
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            debugPrint('StreamBuilder error: ${snapshot.error}');
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 64),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Failed to load sites',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _initialLoad,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           final allSites = snapshot.data ?? [];
@@ -261,12 +305,7 @@ class _ViewerHomeState extends State<ViewerHome> {
               children: [
                 _buildWelcomeCard(authUser),
                 const SizedBox(height: 24),
-                StreamBuilder<int>(
-                  stream: _totalSitesStream(),
-                  builder: (context, countSnap) {
-                    return _buildStatsGrid(countSnap.data ?? allSites.length);
-                  },
-                ),
+                _buildStatsGrid(allSites.length),
                 const SizedBox(height: 24),
                 _buildSearchBar(),
                 const SizedBox(height: 16),
@@ -729,7 +768,7 @@ class _ViewerHomeState extends State<ViewerHome> {
             ),
             const SizedBox(height: 2),
             Text(
-              'By: ${site.createdByName!.isEmpty ? 'Unknown' : site.createdByName}',
+              'By: ${site.createdByName?.isEmpty ?? true ? 'Unknown' : site.createdByName}',
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
@@ -749,10 +788,7 @@ class _ViewerHomeState extends State<ViewerHome> {
   }
 
   Widget _buildInfoBanner() {
-    // ignore: unused_local_variable
-    final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

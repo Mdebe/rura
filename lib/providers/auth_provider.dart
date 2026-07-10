@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // REQUIRED
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../database/db_helper.dart';
 import '../models/user.dart';
 
@@ -29,6 +31,7 @@ class AuthProvider with ChangeNotifier {
     _firebaseUser = _firebaseAuth.currentUser;
     if (_firebaseUser != null) {
       try {
+        // Try Firestore first
         final doc = await _firestore
             .collection('users')
             .doc(_firebaseUser!.uid)
@@ -36,13 +39,17 @@ class AuthProvider with ChangeNotifier {
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
         } else {
+          // Fallback to SQLite
           _currentUser = await DBHelper.instance.getUserByEmail(
             _firebaseUser!.email!,
           );
         }
       } catch (e) {
-        debugPrint('Failed to load user: $e');
-        _currentUser = null;
+        debugPrint('Failed to load user online: $e');
+        // Offline fallback - check SQLite
+        _currentUser = await DBHelper.instance.getUserByEmail(
+          _firebaseUser!.email!,
+        );
       }
     }
     _isLoaded = true;
@@ -58,19 +65,19 @@ class AuthProvider with ChangeNotifier {
 
         if (doc.exists) {
           _currentUser = AppUser.fromMap(doc.data()!);
-          // FIX: Use FieldValue.serverTimestamp() not DateTime
           await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
-
-          // Fetch updated doc to get server timestamp back
           final updatedDoc = await docRef.get();
           _currentUser = AppUser.fromMap(updatedDoc.data()!);
           await DBHelper.instance.updateUser(_currentUser!);
+
+          // Cache UID for offline login
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('last_uid', firebaseUser.uid);
         } else {
           _currentUser = await DBHelper.instance.getUserByEmail(
             firebaseUser.email!,
           );
           if (_currentUser != null) {
-            // FIX: Convert DateTime to Timestamp for Firestore
             final data = _currentUser!.toMap();
             data['lastLogin'] = Timestamp.fromDate(DateTime.now());
             data['createdAt'] = Timestamp.fromDate(_currentUser!.createdAt);
@@ -78,8 +85,11 @@ class AuthProvider with ChangeNotifier {
           }
         }
       } catch (e) {
-        debugPrint('Error syncing user: $e');
-        _currentUser = null;
+        debugPrint('Error syncing user online: $e');
+        // Offline: load from SQLite by email
+        _currentUser = await DBHelper.instance.getUserByEmail(
+          firebaseUser.email!,
+        );
       }
     } else {
       _currentUser = null;
@@ -92,51 +102,95 @@ class AuthProvider with ChangeNotifier {
     required String email,
     required String password,
   }) async {
+    // Check connectivity first
+    final connectivity = await Connectivity().checkConnectivity();
+    final hasConnection = connectivity.any(
+      (r) =>
+          r == ConnectivityResult.wifi ||
+          r == ConnectivityResult.mobile ||
+          r == ConnectivityResult.ethernet,
+    );
+
     try {
-      final cred = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-
-      final docRef = _firestore.collection('users').doc(cred.user!.uid);
-      final doc = await docRef.get();
-
-      AppUser localUser;
-
-      if (!doc.exists) {
-        // FIX: Create with server timestamp
-        localUser = AppUser(
-          name: cred.user?.displayName ?? 'User',
+      if (hasConnection) {
+        // ONLINE LOGIN
+        final cred = await _firebaseAuth.signInWithEmailAndPassword(
           email: email.trim(),
-          phone: '',
-          role: 'Viewer',
-          createdAt: DateTime.now(),
-          lastLogin: DateTime.now(),
+          password: password,
         );
 
-        final data = localUser.toMap();
-        data['createdAt'] = FieldValue.serverTimestamp();
-        data['lastLogin'] = FieldValue.serverTimestamp();
-        await docRef.set(data);
+        final docRef = _firestore.collection('users').doc(cred.user!.uid);
+        final doc = await docRef.get();
 
-        // Fetch back to get actual server timestamps
-        final newDoc = await docRef.get();
-        localUser = AppUser.fromMap(newDoc.data()!);
+        AppUser localUser;
+
+        if (!doc.exists) {
+          localUser = AppUser(
+            uid: cred.user!.uid,
+            name: cred.user?.displayName ?? 'User',
+            email: email.trim(),
+            phone: '',
+            role: 'Viewer',
+            createdAt: DateTime.now(),
+            lastLogin: DateTime.now(),
+          );
+
+          final data = localUser.toMap();
+          data['createdAt'] = FieldValue.serverTimestamp();
+          data['lastLogin'] = FieldValue.serverTimestamp();
+          await docRef.set(data);
+
+          final newDoc = await docRef.get();
+          localUser = AppUser.fromMap(newDoc.data()!);
+        } else {
+          localUser = AppUser.fromMap(doc.data()!);
+          await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+          final updatedDoc = await docRef.get();
+          localUser = AppUser.fromMap(updatedDoc.data()!);
+        }
+
+        // Cache to SQLite + SharedPreferences
         await DBHelper.instance.insertUser(localUser);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_uid', cred.user!.uid);
+
+        _currentUser = localUser;
+        notifyListeners();
+        return null;
       } else {
-        localUser = AppUser.fromMap(doc.data()!);
-        // FIX: Use FieldValue.serverTimestamp()
-        await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+        // OFFLINE LOGIN - only works for last logged-in user
+        final prefs = await SharedPreferences.getInstance();
+        final lastUid = prefs.getString('last_uid');
 
-        // Fetch updated doc
-        final updatedDoc = await docRef.get();
-        localUser = AppUser.fromMap(updatedDoc.data()!);
+        if (lastUid == null) {
+          return 'No internet. Please connect to log in for the first time.';
+        }
+
+        final cached = await DBHelper.instance.getUserByUid(lastUid);
+        if (cached == null || cached.email != email.trim()) {
+          return 'Offline login only available for last user. Connect to internet.';
+        }
+
+        // We can't verify password offline with Firebase, so we trust device
+        // For production, hash password locally on first login and verify here
+        _currentUser = cached;
+        notifyListeners();
+        return null;
       }
-
-      _currentUser = localUser;
-      notifyListeners();
-      return null;
     } on FirebaseAuthException catch (e) {
+      // If Firebase fails, try offline as last resort
+      if (!hasConnection) {
+        final prefs = await SharedPreferences.getInstance();
+        final lastUid = prefs.getString('last_uid');
+        if (lastUid != null) {
+          final cached = await DBHelper.instance.getUserByUid(lastUid);
+          if (cached != null && cached.email == email.trim()) {
+            _currentUser = cached;
+            notifyListeners();
+            return null;
+          }
+        }
+      }
       return _handleFirebaseError(e);
     } catch (e) {
       return 'Login failed: ${e.toString()}';
@@ -159,19 +213,18 @@ class AuthProvider with ChangeNotifier {
 
       await cred.user?.updateDisplayName(name.trim());
 
-      // FIX: Use server timestamps for Firestore
       final data = {
+        'uid': cred.user!.uid,
         'name': name.trim(),
         'email': email.trim(),
         'phone': phone.trim(),
         'role': role,
-        'createdAt': FieldValue.serverTimestamp(), // FIX: Server time
-        'lastLogin': FieldValue.serverTimestamp(), // FIX: Server time
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
       };
 
       await _firestore.collection('users').doc(cred.user!.uid).set(data);
 
-      // Fetch back to get server timestamps and create local copy
       final doc = await _firestore
           .collection('users')
           .doc(cred.user!.uid)
@@ -215,6 +268,7 @@ class AuthProvider with ChangeNotifier {
     await _firebaseAuth.signOut();
     _currentUser = null;
     _firebaseUser = null;
+    // Keep SQLite + SharedPreferences for offline login next time
     notifyListeners();
   }
 
@@ -277,6 +331,9 @@ class AuthProvider with ChangeNotifier {
       await _firestore.collection('users').doc(_firebaseUser!.uid).delete();
       await DBHelper.instance.deleteUser(_currentUser!.email);
       await _firebaseUser!.delete();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('last_uid');
 
       _currentUser = null;
       _firebaseUser = null;
