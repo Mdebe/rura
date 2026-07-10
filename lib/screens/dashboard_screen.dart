@@ -228,7 +228,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _liveSub?.cancel();
     _liveSub = _firestore
         .collection('sites')
-       
         .orderBy('registeredAt', descending: true)
         .snapshots()
         .listen(
@@ -842,13 +841,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               gradient: const [Color(0xFF11998e), Color(0xFF38ef7d)],
               onTap: () => widget.onNavigate?.call(3),
             ),
-            _futuristicActionButton(
-              icon: Icons.insights_rounded,
-              title: 'Reports',
-              subtitle: 'Analytics',
-              gradient: const [Color(0xFFf093fb), Color(0xFFf5576c)],
-              onTap: () => widget.onNavigate?.call(4),
-            ),
+
             _futuristicActionButton(
               icon: Icons.cloud_upload_rounded,
               title: 'Sync',
