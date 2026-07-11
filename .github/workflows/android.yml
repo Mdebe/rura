@@ -37,26 +37,44 @@ jobs:
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
 
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Release APK
+      # Decode the keystore from the GitHub secret
+      - name: Decode Android Keystore
+        shell: bash
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/georura-upload-key.jks
+
+      # Create android/key.properties
+      - name: Create key.properties
+        shell: bash
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=app/georura-upload-key.jks
+          EOF
+
+      - name: Build Signed Release APK
         run: flutter build apk --release
+
+      # Verify that the APK is signed
+      - name: Verify APK Signature
+        run: |
+          $ANDROID_HOME/build-tools/*/apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
 
       - name: Rename APK
         run: |
-          cd build/app/outputs/flutter-apk
-          mv app-release.apk georura.apk
-          ls -lh georura.apk
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/georura.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: georura-v${{ steps.version.outputs.version }}
           path: build/app/outputs/flutter-apk/georura.apk
-          if-no-files-found: error
           retention-days: 30
 
       - name: Create GitHub Release
@@ -65,19 +83,6 @@ jobs:
         with:
           files: build/app/outputs/flutter-apk/georura.apk
           name: Georura v${{ steps.version.outputs.version }}
-          body: |
-            ## Georura v${{ steps.version.outputs.version }}
-            
-            ### Download
-            **georura.apk** - Universal APK, works on all Android devices
-            
-            ### Install
-            1. Download `georura.apk` 
-            2. Open the file on your Android device
-            3. Allow "Install from unknown sources" if prompted
-            4. Tap Install
-            
-            Compatible with Android 5.0+ (API 21+)
           draft: false
           prerelease: false
         env:
