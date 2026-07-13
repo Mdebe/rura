@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart'; // for Clipboard
+import 'package:flutter/services.dart';
 
 import '../models/site.dart';
 import '../theme/app_theme.dart';
@@ -52,7 +52,7 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       await _loadLocation();
-      _sites = await _loadFirebaseSites(); // Viewers only read from Firebase
+      _sites = await _loadFirebaseSites();
 
       if (!mounted) return;
       setState(() => _loading = false);
@@ -71,7 +71,7 @@ class _MapScreenState extends State<MapScreen> {
       final snapshot = await _firestore
           .collection('sites')
           .orderBy('registeredAt', descending: true)
-          .limit(500) // viewers can see more
+          .limit(500)
           .get();
 
       return snapshot.docs
@@ -125,7 +125,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // FIXED: Don't use canLaunchUrl on Android 11+ - just try launchUrl
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
       _showSnack('No coordinates for this site');
@@ -136,7 +135,6 @@ class _MapScreenState extends State<MapScreen> {
     final lng = site.longitude!;
     final label = Uri.encodeComponent(site.name);
 
-    // Try these in order: Google Nav -> Google Web -> geo: -> OSM
     final uris = [
       Uri.parse('google.navigation:q=$lat,$lng'),
       Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
@@ -157,7 +155,6 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    // All failed - copy coords
     await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
     _showSnack('Could not open Maps. Coordinates copied.');
   }

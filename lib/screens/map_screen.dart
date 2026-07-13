@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart'; // ADD THIS for Clipboard
+import 'package:flutter/services.dart';
 import 'package:ruralmap/screens/household_details_screen.dart';
 
 import '../database/db_helper.dart';
@@ -152,7 +152,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // FIXED: Don't use canLaunchUrl on Android - it lies. Just try launching.
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
       _showSnack('No coordinates for this site');
@@ -163,15 +162,10 @@ class _MapScreenState extends State<MapScreen> {
     final lng = site.longitude!;
     final label = Uri.encodeComponent(site.name);
 
-    // Try these URIs in order. Don't check canLaunchUrl - just launch and catch errors.
     final uris = [
-      // 1. Google Maps navigation - best for turn-by-turn
       Uri.parse('google.navigation:q=$lat,$lng'),
-      // 2. Google Maps web - works if app not installed
       Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
-      // 3. geo: intent - opens default maps app on Android
       Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)'),
-      // 4. OSM web - last resort
       Uri.parse('https://www.openstreetmap.org/directions?to=$lat%2C$lng'),
     ];
 
@@ -183,15 +177,14 @@ class _MapScreenState extends State<MapScreen> {
         );
         if (launched) {
           debugPrint('Launched directions with: $uri');
-          return; // Success
+          return;
         }
       } catch (e) {
         debugPrint('Failed to launch $uri: $e');
-        continue; // Try next
+        continue;
       }
     }
 
-    // All failed - copy coords
     await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
     _showSnack('Could not open Maps. Coordinates copied to clipboard.');
   }
