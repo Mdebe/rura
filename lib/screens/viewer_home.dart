@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/auth_provider.dart';
 import '../models/site.dart';
 import '../models/user.dart';
-import 'site_list_screen.dart';
-import 'map_screen.dart';
-import 'profile_screen.dart';
+import 'site_list_screen_viewer.dart';
+import 'map_screen_viewer.dart';
+import 'profile_screen_viewer.dart';
 
 class ViewerHome extends StatefulWidget {
   const ViewerHome({super.key});
@@ -98,6 +99,23 @@ class _ViewerHomeState extends State<ViewerHome> {
     }).toList();
   }
 
+  Future<void> _launchDirections(Site site) async {
+    if (site.latitude == null || site.longitude == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No coordinates for this site')),
+        );
+      }
+      return;
+    }
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   void _showSiteDetails(Site site) {
     showModalBottomSheet(
       context: context,
@@ -160,10 +178,24 @@ class _ViewerHomeState extends State<ViewerHome> {
                 site.registeredAt.toLocal().toString().split(' ')[0],
               ),
               const SizedBox(height: 32),
-              FilledButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-                label: const Text('Close'),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _launchDirections(site),
+                      icon: const Icon(Icons.directions),
+                      label: const Text('Directions'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Close'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -253,7 +285,6 @@ class _ViewerHomeState extends State<ViewerHome> {
       body: StreamBuilder<List<Site>>(
         stream: _sitesStream(),
         builder: (context, snapshot) {
-          // CRITICAL: Handle all stream states
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
