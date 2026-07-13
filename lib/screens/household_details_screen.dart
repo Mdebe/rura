@@ -50,12 +50,11 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
     setState(() => _syncing = true);
 
     try {
-      // FIX: Use flat /sites collection, not /users/{uid}/sites
       final docRef = _site.firestoreId != null
           ? FirebaseFirestore.instance
                 .collection('sites')
                 .doc(_site.firestoreId)
-          : FirebaseFirestore.instance.collection('sites').doc(); // Auto ID
+          : FirebaseFirestore.instance.collection('sites').doc();
 
       final currentUser = FirebaseAuth.instance.currentUser;
 
@@ -64,13 +63,12 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
       data['isSynced'] = true;
       data['lastUpdated'] = FieldValue.serverTimestamp();
       data['createdBy'] = _site.createdBy ?? currentUser?.email ?? 'Unknown';
-      data['createdByUid'] = currentUser?.uid; // Track who created it
+      data['createdByUid'] = currentUser?.uid;
       data['createdByName'] = currentUser?.displayName ?? _site.createdBy;
 
       await docRef.set(data, SetOptions(merge: true));
 
       if (_site.id != null) {
-        // Fetch back to get server timestamp
         final snapshot = await docRef.get();
         final updatedSite = Site.fromMap(
           snapshot.data()!,
@@ -101,6 +99,50 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
         ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
       }
     }
+  }
+
+  void _showSnack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  // FIXED: No canLaunchUrl - Android 11+ blocks it. Just try launchUrl.
+  Future<void> _launchDirections(Site site) async {
+    if (site.latitude == null || site.longitude == null) {
+      _showSnack('No coordinates available for this site');
+      return;
+    }
+
+    final lat = site.latitude!;
+    final lng = site.longitude!;
+    final label = Uri.encodeComponent(site.name);
+
+    final uris = [
+      Uri.parse('google.navigation:q=$lat,$lng'),
+      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
+      Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)'),
+      Uri.parse('https://www.openstreetmap.org/directions?to=$lat%2C$lng'),
+    ];
+
+    for (final uri in uris) {
+      try {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) {
+          debugPrint('Launched directions with: $uri');
+          return;
+        }
+      } catch (e) {
+        debugPrint('Failed to launch $uri: $e');
+        continue;
+      }
+    }
+
+    await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    _showSnack('Could not open Maps. Coordinates copied to clipboard.');
   }
 
   Widget _detailTile(
@@ -155,7 +197,7 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
                   ).showSnackBar(SnackBar(content: Text('$label copied')));
                 },
               ),
-            ?trailing,
+            if (trailing != null) trailing,
           ],
         ),
       ),
@@ -239,8 +281,10 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
     final uri = Uri.parse(
       'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
     );
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      _showSnack('Could not open Maps');
     }
   }
 
@@ -251,8 +295,10 @@ class _HouseholdDetailsScreenState extends State<HouseholdDetailsScreen> {
     final uri = Uri.parse(
       'https://www.openstreetmap.org/?mlat=$lat&mlon=$lng#map=18/$lat/$lng',
     );
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      _showSnack('Could not open Maps');
     }
   }
 
@@ -338,9 +384,6 @@ Code: ${_site.siteCode}
 Type: ${_site.type.label}
 Head: ${_site.householdHead ?? 'N/A'}
 Phone: ${_site.phoneNumber ?? 'N/A'}
- 
- 
- 
 Size: ${_site.householdSize?.toString() ?? 'N/A'}
 Males: ${_site.males ?? 'N/A'}, Females: ${_site.females ?? 'N/A'}
 Children: ${_site.children ?? 'N/A'}, Adults: ${_site.adults ?? 'N/A'}, Pensioners: ${_site.pensioners ?? 'N/A'}
@@ -357,7 +400,6 @@ Directions: ${_site.directions}
 Services: $servicesText
 Notes: ${_site.notes ?? 'None'}
 Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.registeredAt.year}
- 
 ''';
   }
 
@@ -527,7 +569,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
             _buildImage(context),
             const SizedBox(height: 16),
 
-            // Header card
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,7 +674,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Household Info
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -665,7 +705,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Demographics
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -711,7 +750,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Employment & Income
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -745,7 +783,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Location Details
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -829,7 +866,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // GPS
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,10 +924,8 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Services & Utilities - NEW SECTION
             _buildServicesSection(),
 
-            // Notes
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -907,7 +941,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
               ),
             ),
 
-            // Metadata
             _card(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -938,7 +971,6 @@ Registered: ${_site.registeredAt.day}/${_site.registeredAt.month}/${_site.regist
                     _site.isSynced ? "Synced to cloud" : "Pending sync",
                     context: context,
                   ),
-
                   _detailTile(
                     Icons.description,
                     "Description",

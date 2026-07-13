@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart'; // for Clipboard
 
 import '../models/site.dart';
 import '../theme/app_theme.dart';
@@ -118,27 +119,47 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  void _showSnack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  // FIXED: Don't use canLaunchUrl on Android 11+ - just try launchUrl
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No coordinates for this site')),
-        );
-      }
+      _showSnack('No coordinates for this site');
       return;
     }
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not open Maps')));
+
+    final lat = site.latitude!;
+    final lng = site.longitude!;
+    final label = Uri.encodeComponent(site.name);
+
+    // Try these in order: Google Nav -> Google Web -> geo: -> OSM
+    final uris = [
+      Uri.parse('google.navigation:q=$lat,$lng'),
+      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
+      Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)'),
+      Uri.parse('https://www.openstreetmap.org/directions?to=$lat%2C$lng'),
+    ];
+
+    for (final uri in uris) {
+      try {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) return;
+      } catch (e) {
+        debugPrint('Failed to launch $uri: $e');
+        continue;
       }
     }
+
+    // All failed - copy coords
+    await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    _showSnack('Could not open Maps. Coordinates copied.');
   }
 
   List<Marker> _buildMarkers() {
@@ -247,7 +268,6 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ],
               const SizedBox(height: 24),
-              // VIEWER: Only directions + close. No edit/delete/view details navigation
               Row(
                 children: [
                   Expanded(

@@ -63,7 +63,13 @@ class _SiteListScreenState extends State<SiteListScreen> {
     }).toList();
   }
 
-  // FIXED: Try Google Maps -> OSM Web -> geo: URI -> fallback
+  void _showSnack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  // FIXED: Don't use canLaunchUrl - Android 11+ blocks it. Just try launchUrl.
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
       _showSnack('No coordinates available for this site');
@@ -72,43 +78,35 @@ class _SiteListScreenState extends State<SiteListScreen> {
 
     final lat = site.latitude!;
     final lng = site.longitude!;
+    final label = Uri.encodeComponent(site.name);
 
-    // 1. Google Maps web/app
-    final googleUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
-    );
+    // Try these URIs in order: Google Nav -> Google Web -> geo: -> OSM
+    final uris = [
+      Uri.parse('google.navigation:q=$lat,$lng'),
+      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
+      Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)'),
+      Uri.parse('https://www.openstreetmap.org/directions?to=$lat%2C$lng'),
+    ];
 
-    // 2. OpenStreetMap web directions
-    final osmUri = Uri.parse(
-      'https://www.openstreetmap.org/directions?to=$lat%2C$lng',
-    );
-
-    // 3. geo: URI - opens default maps app on Android
-    final geoUri = Uri.parse(
-      'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(site.name)})',
-    );
-
-    try {
-      if (await canLaunchUrl(googleUri)) {
-        await launchUrl(googleUri, mode: LaunchMode.externalApplication);
-      } else if (await canLaunchUrl(osmUri)) {
-        await launchUrl(osmUri, mode: LaunchMode.externalApplication);
-      } else if (await canLaunchUrl(geoUri)) {
-        await launchUrl(geoUri);
-      } else {
-        throw 'No maps app found';
+    for (final uri in uris) {
+      try {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) {
+          debugPrint('Launched directions with: $uri');
+          return; // Success
+        }
+      } catch (e) {
+        debugPrint('Failed to launch $uri: $e');
+        continue; // Try next
       }
-    } catch (e) {
-      debugPrint('Directions launch failed: $e');
-      _showSnack('Could not open Maps. Coordinates copied to clipboard.');
-      await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
     }
-  }
 
-  void _showSnack(String msg) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    }
+    // All failed - copy coords
+    await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    _showSnack('Could not open Maps. Coordinates copied to clipboard.');
   }
 
   void _showSiteDetails(Site site) {

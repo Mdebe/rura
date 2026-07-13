@@ -3,7 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:url_launcher/url_launcher.dart'; // ADD THIS
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart'; // ADD THIS for Clipboard
 import 'package:ruralmap/screens/household_details_screen.dart';
 
 import '../database/db_helper.dart';
@@ -145,40 +146,54 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // FIX: Directions method
+  void _showSnack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  // FIXED: Don't use canLaunchUrl on Android - it lies. Just try launching.
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No coordinates for this site')),
-        );
-      }
+      _showSnack('No coordinates for this site');
       return;
     }
 
-    // Try Google Maps first, fallback to OSM web
-    final googleUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}',
-    );
-    final osmUri = Uri.parse(
-      'https://www.openstreetmap.org/directions?to=${site.latitude}%2C${site.longitude}',
-    );
+    final lat = site.latitude!;
+    final lng = site.longitude!;
+    final label = Uri.encodeComponent(site.name);
 
-    try {
-      if (await canLaunchUrl(googleUri)) {
-        await launchUrl(googleUri, mode: LaunchMode.externalApplication);
-      } else if (await canLaunchUrl(osmUri)) {
-        await launchUrl(osmUri, mode: LaunchMode.externalApplication);
-      } else {
-        throw 'Could not launch maps';
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not open Maps')));
+    // Try these URIs in order. Don't check canLaunchUrl - just launch and catch errors.
+    final uris = [
+      // 1. Google Maps navigation - best for turn-by-turn
+      Uri.parse('google.navigation:q=$lat,$lng'),
+      // 2. Google Maps web - works if app not installed
+      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'),
+      // 3. geo: intent - opens default maps app on Android
+      Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)'),
+      // 4. OSM web - last resort
+      Uri.parse('https://www.openstreetmap.org/directions?to=$lat%2C$lng'),
+    ];
+
+    for (final uri in uris) {
+      try {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (launched) {
+          debugPrint('Launched directions with: $uri');
+          return; // Success
+        }
+      } catch (e) {
+        debugPrint('Failed to launch $uri: $e');
+        continue; // Try next
       }
     }
+
+    // All failed - copy coords
+    await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    _showSnack('Could not open Maps. Coordinates copied to clipboard.');
   }
 
   List<Marker> _buildMarkers() {
@@ -215,36 +230,57 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
+  Widget _buildDetailRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool showCopy = false,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: colorScheme.primary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
+    return InkWell(
+      onTap: showCopy
+          ? () {
+              Clipboard.setData(ClipboardData(text: value));
+              _showSnack('Copied to clipboard');
+            }
+          : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (showCopy)
+                      const Icon(Icons.copy, size: 14, color: Colors.grey),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -311,6 +347,15 @@ class _MapScreenState extends State<MapScreen> {
                 'Registered',
                 site.registeredAt.toLocal().toString().split(' ')[0],
               ),
+              if (site.latitude != null && site.longitude != null) ...[
+                const SizedBox(height: 8),
+                _buildDetailRow(
+                  Icons.gps_fixed,
+                  'Coordinates',
+                  '${site.latitude!.toStringAsFixed(6)}, ${site.longitude!.toStringAsFixed(6)}',
+                  showCopy: true,
+                ),
+              ],
               if (site.householdHead != null) ...[
                 const SizedBox(height: 8),
                 _buildDetailRow(
@@ -324,7 +369,6 @@ class _MapScreenState extends State<MapScreen> {
                 _buildDetailRow(Icons.phone, 'Phone', site.phoneNumber!),
               ],
               const SizedBox(height: 24),
-              // FIX: Added Directions button + View Details
               Row(
                 children: [
                   Expanded(
@@ -349,7 +393,7 @@ class _MapScreenState extends State<MapScreen> {
                               site: site,
                               onEdit: () {
                                 Navigator.pop(context);
-                                _load(); // Refresh after edit
+                                _load();
                               },
                             ),
                           ),
