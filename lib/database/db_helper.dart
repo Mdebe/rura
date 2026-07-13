@@ -492,7 +492,7 @@ class DBHelper {
           await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
         ) ??
         0;
-    final pendingImageSync =
+    final pendingImageSync = // NEW
         Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM sites WHERE image_synced = 0 AND image_paths IS NOT NULL',
@@ -504,7 +504,7 @@ class DBHelper {
       'totalSites': totalSites,
       'gpsCaptured': gpsCaptured,
       'pendingSync': pendingSync,
-      'pendingImageSync': pendingImageSync,
+      'pendingImageSync': pendingImageSync, // NEW
     };
   }
 

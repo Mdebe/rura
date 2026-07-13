@@ -154,32 +154,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   List<PopupMenuEntry<String>> _buildMenuItems() {
-    final items = <PopupMenuEntry<String>>[
-      const PopupMenuItem(
-        value: 'profile',
-        child: ListTile(
-          leading: Icon(Icons.person_outline),
-          title: Text('Profile'),
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-        ),
-      ),
-    ];
-
-    // Hide settings for viewers
-    if (!isViewer) {
-      items.add(
-        const PopupMenuItem(
-          value: 'settings',
-          child: ListTile(
-            leading: Icon(Icons.settings_outlined),
-            title: Text('Settings'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-          ),
-        ),
-      );
-    }
+    final items = <PopupMenuEntry<String>>[];
 
     items.addAll([
       const PopupMenuItem(

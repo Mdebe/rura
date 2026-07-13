@@ -56,9 +56,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   bool _loading = true;
   bool _syncing = false;
+  bool _syncingImages = false;
   bool _isOnline = false;
   String? _errorMessage;
   int _pendingSync = 0;
+  int _pendingImageSync = 0; // NEW
   DateTime? _lastUpdated;
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
@@ -185,6 +187,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _isOnline = firebaseResult.succeeded;
         _currentUser = authUser;
         _pendingSync = fieldStats['pendingSync'] ?? 0;
+        _pendingImageSync = fieldStats['pendingImageSync'] ?? 0;
         _lastUpdated = DateTime.now();
         _loading = false;
         _errorMessage = null;
@@ -335,6 +338,32 @@ class _DashboardScreenState extends State<DashboardScreen>
       _showSnack('Sync failed: check your connection', isError: true);
     } finally {
       if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _syncImagesToCloudinary() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showSnack('Please log in to sync images', isError: true);
+      return;
+    }
+
+    setState(() => _syncingImages = true);
+    try {
+      final count = await SyncService().uploadPendingImages();
+      await _load();
+      if (!mounted) return;
+      _showSnack(
+        count > 0
+            ? 'Uploaded images for $count sites'
+            : 'All images already synced',
+        isError: false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Image sync failed: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _syncingImages = false);
     }
   }
 
@@ -625,7 +654,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ),
         const SizedBox(height: 16),
-        Row(
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -654,8 +685,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
             _buildStatusChip(),
+            if (_pendingImageSync > 0) _buildImageSyncChip(),
           ],
         ),
       ],
@@ -690,6 +721,49 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildImageSyncChip() {
+    return InkWell(
+      onTap: _syncingImages ? null : _syncImagesToCloudinary,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.purple.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _syncingImages
+                ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.purple.shade700,
+                    ),
+                  )
+                : Icon(
+                    Icons.photo_library,
+                    size: 14,
+                    color: Colors.purple.shade700,
+                  ),
+            const SizedBox(width: 6),
+            Text(
+              '$_pendingImageSync photos',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.purple.shade700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -841,10 +915,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               gradient: const [Color(0xFF11998e), Color(0xFF38ef7d)],
               onTap: () => widget.onNavigate?.call(3),
             ),
-
             _futuristicActionButton(
               icon: Icons.cloud_upload_rounded,
-              title: 'Sync',
+              title: 'Sync Data',
               subtitle: _pendingSync > 0
                   ? '$_pendingSync pending'
                   : 'All synced',
@@ -852,6 +925,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ? [Colors.orange.shade400, Colors.orange.shade600]
                   : [Colors.green.shade400, Colors.green.shade600],
               onTap: _syncToFirebase,
+            ),
+            _futuristicActionButton(
+              icon: Icons.photo_library_rounded,
+              title: 'Sync Photos',
+              subtitle: _pendingImageSync > 0
+                  ? '$_pendingImageSync pending'
+                  : 'All synced',
+              gradient: _pendingImageSync > 0
+                  ? [Colors.purple.shade400, Colors.purple.shade600]
+                  : [Colors.teal.shade400, Colors.teal.shade600],
+              onTap: _syncImagesToCloudinary,
             ),
             _futuristicActionButton(
               icon: Icons.account_circle_rounded,
