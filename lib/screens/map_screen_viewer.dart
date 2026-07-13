@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../models/site.dart';
+import '../theme/app_theme.dart';
 
 class MapScreen extends StatefulWidget {
   final int refreshToken;
-  final List<Site>? initialSites;
 
-  const MapScreen({super.key, this.refreshToken = 0, this.initialSites});
+  const MapScreen({super.key, this.refreshToken = 0});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -17,74 +19,112 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
-  List<Marker> _markers = [];
-  LatLng _initialCenter = const LatLng(-29.85, 31.02); // Durban default
-  double _initialZoom = 10.0;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Stream<List<Site>> _sitesStream() {
-    if (widget.initialSites != null) return Stream.value(widget.initialSites!);
-    return FirebaseFirestore.instance
-        .collection('sites')
-        .orderBy('registeredAt', descending: true)
-        .limit(200)
-        .snapshots()
-        .map(
-          (snap) => snap.docs
-              .map((d) {
-                try {
-                  return Site.fromFirestore(d);
-                } catch (_) {
-                  return null;
-                }
-              })
-              .whereType<Site>()
-              .toList(),
-        );
+  bool _loading = true;
+  String? _errorMessage;
+
+  List<Site> _sites = [];
+  LatLng _currentLocation = const LatLng(-28.9575, 31.4687); // KZN default
+  double? _accuracy;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
   }
 
-  void _setMarkers(List<Site> sites) {
-    final validSites = sites
-        .where((s) => s.latitude != null && s.longitude != null)
-        .toList();
-
-    final markers = validSites
-        .map(
-          (s) => Marker(
-            point: LatLng(s.latitude!, s.longitude!),
-            width: 40,
-            height: 40,
-            child: GestureDetector(
-              onTap: () => _showSiteBottomSheet(s),
-              child: const Icon(Icons.location_on, color: Colors.red, size: 40),
-            ),
-          ),
-        )
-        .toList();
-
-    if (validSites.isNotEmpty) {
-      _initialCenter = LatLng(
-        validSites.first.latitude!,
-        validSites.first.longitude!,
-      );
-      if (validSites.length > 1) {
-        // fit bounds
-        final bounds = LatLngBounds.fromPoints(
-          validSites.map((s) => LatLng(s.latitude!, s.longitude!)).toList(),
-        );
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _mapController.fitCamera(
-            CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
-          );
-        });
-      }
+  @override
+  void didUpdateWidget(covariant MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshToken != oldWidget.refreshToken) {
+      _load();
     }
-
-    setState(() => _markers = markers);
   }
 
-  Future<void> _launchGoogleMaps(Site site) async {
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _loadLocation();
+      _sites = await _loadFirebaseSites(); // Viewers only read from Firebase
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (error, stack) {
+      debugPrint('Viewer MapScreen load failed: $error\n$stack');
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to load map. Check connection and retry.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<List<Site>> _loadFirebaseSites() async {
+    try {
+      final snapshot = await _firestore
+          .collection('sites')
+          .orderBy('registeredAt', descending: true)
+          .limit(500) // viewers can see more
+          .get();
+
+      return snapshot.docs
+          .map((doc) {
+            try {
+              return Site.fromFirestore(doc);
+            } catch (e) {
+              debugPrint('Failed to parse site ${doc.id}: $e');
+              return null;
+            }
+          })
+          .whereType<Site>()
+          .toList();
+    } catch (e) {
+      debugPrint('Firebase sites load failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _loadLocation() async {
+    try {
+      bool enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+
+      _currentLocation = LatLng(pos.latitude, pos.longitude);
+      _accuracy = pos.accuracy;
+    } catch (error) {
+      debugPrint('Location load failed: $error');
+    }
+  }
+
+  Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
-      _showSnack('No coordinates for this site');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No coordinates for this site')),
+        );
+      }
       return;
     }
     final uri = Uri.parse(
@@ -93,78 +133,98 @@ class _MapScreenState extends State<MapScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      _showSnack('Could not open Google Maps');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not open Maps')));
+      }
     }
   }
 
-  Future<void> _launchOpenStreetMap(Site site) async {
-    if (site.latitude == null || site.longitude == null) {
-      _showSnack('No coordinates for this site');
-      return;
-    }
-    // OSM directions via web
-    final uri = Uri.parse(
-      'https://www.openstreetmap.org/directions?to=${site.latitude}%2C${site.longitude}',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      _showSnack('Could not open OpenStreetMap');
+  List<Marker> _buildMarkers() {
+    return _sites
+        .where((e) => e.latitude != null && e.longitude != null)
+        .map(
+          (site) => Marker(
+            point: LatLng(site.latitude!, site.longitude!),
+            width: 55,
+            height: 55,
+            child: GestureDetector(
+              onTap: () => _showSite(site),
+              child: Icon(
+                Icons.location_on,
+                color: _markerColor(site.type),
+                size: 42,
+              ),
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  Color _markerColor(SiteType type) {
+    switch (type) {
+      case SiteType.house:
+        return Colors.green;
+      case SiteType.business:
+        return Colors.orange;
+      case SiteType.school:
+        return Colors.blue;
+      case SiteType.church:
+        return Colors.purple;
     }
   }
 
-  void _showSnack(String msg) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    }
-  }
-
-  void _showSiteBottomSheet(Site site) {
+  void _showSite(Site site) {
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
+      showDragHandle: true,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.55,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        builder: (_, controller) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: ListView(
-            controller: controller,
-            padding: const EdgeInsets.all(24),
+      backgroundColor: colorScheme.surface,
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
+              Icon(Icons.home_work, size: 60, color: AppColors.primary),
+              const SizedBox(height: 16),
+              Text(
+                site.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(site.village, style: TextStyle(color: Colors.grey.shade600)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  site.type.label,
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                site.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
               const SizedBox(height: 16),
               _buildDetailRow(Icons.badge, 'Site Code', site.siteCode),
-              const SizedBox(height: 12),
-              _buildDetailRow(Icons.location_city, 'Village', site.village),
-              const SizedBox(height: 12),
-              _buildDetailRow(
-                Icons.directions,
-                'Directions',
-                site.directions.isEmpty ? 'Not provided' : site.directions,
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              if (site.directions.isNotEmpty)
+                _buildDetailRow(Icons.route, 'Directions', site.directions),
+              if (site.directions.isNotEmpty) const SizedBox(height: 8),
               _buildDetailRow(
                 Icons.person,
                 'Created By',
@@ -172,44 +232,52 @@ class _MapScreenState extends State<MapScreen> {
                     ? 'Unknown'
                     : site.createdByName!,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _buildDetailRow(
                 Icons.calendar_today,
                 'Registered',
                 site.registeredAt.toLocal().toString().split(' ')[0],
               ),
-              if (site.latitude != null && site.longitude != null) ...[
-                const SizedBox(height: 12),
+              if (site.householdHead != null) ...[
+                const SizedBox(height: 8),
                 _buildDetailRow(
-                  Icons.gps_fixed,
-                  'Coordinates',
-                  '${site.latitude!.toStringAsFixed(6)}, ${site.longitude!.toStringAsFixed(6)}',
+                  Icons.home,
+                  'Household Head',
+                  site.householdHead!,
                 ),
               ],
               const SizedBox(height: 24),
+              // VIEWER: Only directions + close. No edit/delete/view details navigation
               Row(
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => _launchGoogleMaps(site),
-                      icon: const Icon(Icons.map),
-                      label: const Text('Google Maps'),
+                      onPressed: () => _launchDirections(site),
+                      icon: const Icon(Icons.directions),
+                      label: const Text('Directions'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _launchOpenStreetMap(site),
-                      icon: const Icon(Icons.explore),
-                      label: const Text('OpenStreetMap'),
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Close'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -218,8 +286,8 @@ class _MapScreenState extends State<MapScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: colorScheme.primary),
-        const SizedBox(width: 12),
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,16 +295,15 @@ class _MapScreenState extends State<MapScreen> {
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(height: 4),
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -249,57 +316,147 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 72,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         title: const Text('All Sites Map'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            tooltip: 'Center on sites',
-            onPressed: () {
-              if (_markers.isNotEmpty) {
-                final bounds = LatLngBounds.fromPoints(
-                  _markers.map((m) => m.point).toList(),
-                );
-                _mapController.fitCamera(
-                  CameraFit.bounds(
-                    bounds: bounds,
-                    padding: const EdgeInsets.all(50),
-                  ),
-                );
-              }
-            },
-          ),
-        ],
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
       ),
-      body: StreamBuilder<List<Site>>(
-        stream: _sitesStream(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-          final sites = snap.data ?? [];
-          _setMarkers(sites);
-
-          return FlutterMap(
+      body: Stack(
+        children: [
+          FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: _initialCenter,
-              initialZoom: _initialZoom,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-              ),
+              initialCenter: _currentLocation,
+              initialZoom: 16,
+              minZoom: 5,
+              maxZoom: 20,
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.ruralmap', // required by OSM
+                urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                userAgentPackageName: "com.mfundo_iphisi.ruralcensus",
               ),
-              MarkerLayer(markers: _markers),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: _currentLocation,
+                    width: 55,
+                    height: 55,
+                    child: const Icon(
+                      Icons.my_location,
+                      color: Colors.blue,
+                      size: 42,
+                    ),
+                  ),
+                  ..._buildMarkers(),
+                ],
+              ),
             ],
-          );
-        },
+          ),
+          Positioned(
+            top: 16,
+            left: 16,
+            right: 16,
+            child: Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.gps_fixed),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _accuracy == null
+                            ? "Waiting for GPS..."
+                            : "GPS: ${_accuracy!.toStringAsFixed(1)}m",
+                      ),
+                    ),
+                    Chip(
+                      label: Text("${_sites.length} Sites"),
+                      backgroundColor: colorScheme.primaryContainer,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: "gps",
+            onPressed: () async {
+              await _loadLocation();
+              _mapController.move(_currentLocation, 18);
+              if (mounted) setState(() {});
+            },
+            child: const Icon(Icons.my_location),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.small(
+            heroTag: "zoomIn",
+            onPressed: () {
+              final camera = _mapController.camera;
+              _mapController.move(camera.center, camera.zoom + 1);
+            },
+            child: const Icon(Icons.add),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.small(
+            heroTag: "zoomOut",
+            onPressed: () {
+              final camera = _mapController.camera;
+              _mapController.move(camera.center, camera.zoom - 1);
+            },
+            child: const Icon(Icons.remove),
+          ),
+        ],
       ),
     );
   }

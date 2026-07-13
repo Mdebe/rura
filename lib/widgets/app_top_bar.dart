@@ -14,6 +14,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showHamburger;
   final bool showLocationRefresh;
   final bool showActionsMenu;
+  final bool isViewer; // Hides settings for viewers
 
   const GeoRuraAppBar({
     super.key,
@@ -28,6 +29,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showHamburger = false,
     this.showLocationRefresh = false,
     this.showActionsMenu = true,
+    this.isViewer = false,
   });
 
   @override
@@ -58,64 +60,7 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.more_vert_rounded),
           tooltip: 'More options',
           onSelected: (value) => _handleMenuSelection(context, value),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'profile',
-              child: ListTile(
-                leading: Icon(Icons.person_outline),
-                title: Text('Profile'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'settings',
-              child: ListTile(
-                leading: Icon(Icons.settings_outlined),
-                title: Text('Settings'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'help',
-              child: ListTile(
-                leading: Icon(Icons.help_outline),
-                title: Text('Help & Support'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-            const PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'terms',
-              child: ListTile(
-                leading: Icon(Icons.description_outlined),
-                title: Text('Terms & Conditions'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'privacy',
-              child: ListTile(
-                leading: Icon(Icons.privacy_tip_outlined),
-                title: Text('Privacy Policy'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-            const PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'about',
-              child: ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('About GeoRura'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
-            ),
-          ],
+          itemBuilder: (context) => _buildMenuItems(),
         ),
       );
     }
@@ -208,13 +153,85 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
     return null;
   }
 
+  List<PopupMenuEntry<String>> _buildMenuItems() {
+    final items = <PopupMenuEntry<String>>[
+      const PopupMenuItem(
+        value: 'profile',
+        child: ListTile(
+          leading: Icon(Icons.person_outline),
+          title: Text('Profile'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+        ),
+      ),
+    ];
+
+    // Hide settings for viewers
+    if (!isViewer) {
+      items.add(
+        const PopupMenuItem(
+          value: 'settings',
+          child: ListTile(
+            leading: Icon(Icons.settings_outlined),
+            title: Text('Settings'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+          ),
+        ),
+      );
+    }
+
+    items.addAll([
+      const PopupMenuItem(
+        value: 'help',
+        child: ListTile(
+          leading: Icon(Icons.help_outline),
+          title: Text('Help & Support'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+        ),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem(
+        value: 'terms',
+        child: ListTile(
+          leading: Icon(Icons.description_outlined),
+          title: Text('Terms & Conditions'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'privacy',
+        child: ListTile(
+          leading: Icon(Icons.privacy_tip_outlined),
+          title: Text('Privacy Policy'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+        ),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem(
+        value: 'about',
+        child: ListTile(
+          leading: Icon(Icons.info_outline),
+          title: Text('About GeoRura'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+        ),
+      ),
+    ]);
+
+    return items;
+  }
+
   void _handleMenuSelection(BuildContext context, String value) {
     switch (value) {
       case 'profile':
         Navigator.pushNamed(context, '/profile');
         break;
       case 'settings':
-        Navigator.pushNamed(context, '/settings');
+        if (!isViewer) Navigator.pushNamed(context, '/settings');
         break;
       case 'help':
         Navigator.pushNamed(context, '/help');
