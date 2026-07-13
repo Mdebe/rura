@@ -7,10 +7,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 
 import '../database/db_helper.dart';
 import '../models/site.dart';
-import '../services/site_service.dart';
+import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 
 import '../wizard_steps/site_type_step.dart';
@@ -33,7 +34,6 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   static const int _maxPhotos = 5;
 
   final _formKey = GlobalKey<FormState>();
-  final _siteService = SiteService();
 
   // Site Info Controllers
   final _nameController = TextEditingController();
@@ -93,7 +93,7 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
   String _gpsStatus = 'Tap to capture your current location';
   String? _gpsError;
 
-  // Photo State
+  // Photo State - LOCAL PATHS ONLY
   bool _photoLoading = false;
   final List<String> _photoPaths = [];
 
@@ -432,11 +432,12 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
     setState(() => _currentStep = (_currentStep - 1).clamp(0, _stepCount - 1));
   }
 
-  // FIX: Only save to SQLite, mark as unsynced
+  // FIX: Save locally only, mark as unsynced, no Cloudinary upload yet
   Future<void> _saveSite() async {
     if (!_validateStep()) return;
     setState(() => _saving = true);
 
+    final auth = context.read<AuthProvider>();
     final householdSize = int.tryParse(_householdSizeController.text.trim());
     final males = int.tryParse(_malesController.text.trim());
     final females = int.tryParse(_femalesController.text.trim());
@@ -462,6 +463,8 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       registeredAt: DateTime.now(),
       imagePath: _photoPaths.isNotEmpty ? _photoPaths.first : null,
       imagePaths: _photoPaths.isNotEmpty ? _photoPaths : null,
+      imageCloudinaryUrls: null, // Will be filled during sync
+      imageSynced: false, // Mark as not uploaded yet
       latitude: _latitude,
       longitude: _longitude,
       accuracy: _accuracy,
@@ -501,7 +504,9 @@ class _RegisterSiteScreenState extends State<RegisterSiteScreen> {
       employedCount: int.tryParse(employedController.text),
       unemployedCount: int.tryParse(unemployedController.text),
       grantRecipients: int.tryParse(grantRecipientsController.text),
-      isSynced: false, // FIX: Mark as unsynced for dashboard sync
+      isSynced: false, // Mark as unsynced for dashboard sync
+      createdByUid: auth.currentUser?.uid,
+      createdByName: auth.currentUser?.name,
     );
 
     try {

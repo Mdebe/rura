@@ -28,7 +28,7 @@ class DBHelper {
   static const String _dbFileName = 'georura.db';
   static const String _backupFolderName = 'db_backups';
   static const String _exportFolderName = 'db_exports';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3; // Bumped for Cloudinary fields
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
@@ -78,6 +78,8 @@ class DBHelper {
         registered_at TEXT NOT NULL,
         image_path TEXT,
         image_paths TEXT,
+        image_cloudinary_urls TEXT,
+        image_synced INTEGER NOT NULL DEFAULT 0,
         latitude REAL,
         longitude REAL,
         accuracy REAL,
@@ -136,6 +138,9 @@ class DBHelper {
     await db.execute('CREATE INDEX idx_sites_type ON sites(type)');
     await db.execute('CREATE INDEX idx_sites_synced ON sites(isSynced)');
     await db.execute('CREATE INDEX idx_sites_created ON sites(created_by_uid)');
+    await db.execute(
+      'CREATE INDEX idx_sites_image_synced ON sites(image_synced)',
+    );
     await db.execute('CREATE INDEX idx_users_role ON users(role)');
     await db.execute('CREATE INDEX idx_users_email ON users(email)');
     await db.execute('CREATE INDEX idx_users_uid ON users(uid)');
@@ -143,12 +148,21 @@ class DBHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // users table originally had no `uid` column, but AppUser.toSqliteMap()
-      // always includes one — add it so inserts/updates don't fail on
-      // existing installs.
       await db.execute('ALTER TABLE users ADD COLUMN uid TEXT');
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid)',
+      );
+    }
+    if (oldVersion < 3) {
+      // Add Cloudinary fields
+      await db.execute(
+        'ALTER TABLE sites ADD COLUMN image_cloudinary_urls TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE sites ADD COLUMN image_synced INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sites_image_synced ON sites(image_synced)',
       );
     }
   }
@@ -165,6 +179,7 @@ class DBHelper {
     map.remove('id');
     map['isSynced'] = 0;
     map['firestore_id'] = null;
+    map['image_synced'] = site.imageSynced ? 1 : 0;
     map['last_updated'] = DateTime.now().toIso8601String();
     return db.insert(
       'sites',
@@ -184,6 +199,7 @@ class DBHelper {
     final db = await database;
     final map = site.toMap();
     map['last_updated'] = DateTime.now().toIso8601String();
+    map['image_synced'] = site.imageSynced ? 1 : 0;
     if (site.firestoreId != null) {
       map['isSynced'] = 0; // Mark for re-sync if edited
     }
@@ -191,7 +207,7 @@ class DBHelper {
     final updated = await db.update(
       'sites',
       map,
-      where: 'id = ?',
+      where: 'id =?',
       whereArgs: [site.id],
     );
     return updated;
@@ -199,7 +215,7 @@ class DBHelper {
 
   Future<int> deleteSite(int id) async {
     final db = await database;
-    return db.delete('sites', where: 'id = ?', whereArgs: [id]);
+    return db.delete('sites', where: 'id =?', whereArgs: [id]);
   }
 
   Future<int> deleteAllSites() async {
@@ -221,8 +237,20 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'id = ?',
+      where: 'id =?',
       whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Site.fromMap(rows.first);
+  }
+
+  Future<Site?> getSiteByFirestoreId(String firestoreId) async {
+    final db = await database;
+    final rows = await db.query(
+      'sites',
+      where: 'firestore_id =?',
+      whereArgs: [firestoreId],
       limit: 1,
     );
     if (rows.isEmpty) return null;
@@ -233,7 +261,7 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'name LIKE ? OR village LIKE ? OR household_head LIKE ?',
+      where: 'name LIKE? OR village LIKE? OR household_head LIKE?',
       whereArgs: ['%$query%', '%$query%', '%$query%'],
       orderBy: 'registered_at DESC',
     );
@@ -246,34 +274,69 @@ class DBHelper {
 
   Future<int> markSiteUnsynced(int id) async {
     final db = await database;
-    return db.update(
-      'sites',
-      {'isSynced': 0},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return db.update('sites', {'isSynced': 0}, where: 'id =?', whereArgs: [id]);
   }
 
-  Future<List<Site>> getUnsyncedSites() async {
+  Future<List<Site>> getUnsyncedSites({int? limit}) async {
     final db = await database;
     final rows = await db.query(
       'sites',
       where: 'isSynced = 0',
       orderBy: 'registered_at ASC',
+      limit: limit,
     );
     return rows.map((e) => Site.fromMap(e)).toList();
   }
 
-  Future<int> markSiteSynced(int id, String firestoreId) async {
+  Future<List<Site>> getSitesWithUnsyncedImages({int? limit}) async {
+    final db = await database;
+    final rows = await db.query(
+      'sites',
+      where: 'image_synced = 0 AND image_paths IS NOT NULL',
+      orderBy: 'registered_at ASC',
+      limit: limit,
+    );
+    return rows.map((e) => Site.fromMap(e)).toList();
+  }
+
+  Future<int> markSiteSynced(
+    int id,
+    String firestoreId, {
+    List<String>? imageCloudinaryUrls,
+  }) async {
+    final db = await database;
+    final updateMap = {
+      'isSynced': 1,
+      'firestore_id': firestoreId,
+      'last_updated': DateTime.now().toIso8601String(),
+    };
+    if (imageCloudinaryUrls != null) {
+      updateMap['image_cloudinary_urls'] = jsonEncode(imageCloudinaryUrls);
+      updateMap['image_synced'] = 1;
+    }
+    return db.update('sites', updateMap, where: 'id =?', whereArgs: [id]);
+  }
+
+  Future<int> markImagesSynced(int id, List<String> cloudinaryUrls) async {
     final db = await database;
     return db.update(
       'sites',
       {
-        'isSynced': 1,
-        'firestore_id': firestoreId,
+        'image_cloudinary_urls': jsonEncode(cloudinaryUrls),
+        'image_synced': 1,
         'last_updated': DateTime.now().toIso8601String(),
       },
-      where: 'id = ?',
+      where: 'id =?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> markSyncError(int id, String error) async {
+    final db = await database;
+    return db.update(
+      'sites',
+      {'sync_error': error},
+      where: 'id =?',
       whereArgs: [id],
     );
   }
@@ -282,6 +345,16 @@ class DBHelper {
     final db = await database;
     return Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
+        ) ??
+        0;
+  }
+
+  Future<int> getPendingImageSyncCount() async {
+    final db = await database;
+    return Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM sites WHERE image_synced = 0 AND image_paths IS NOT NULL',
+          ),
         ) ??
         0;
   }
@@ -314,7 +387,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: filterRole != null ? 'role = ?' : null,
+      where: filterRole != null ? 'role =?' : null,
       whereArgs: filterRole != null ? [filterRole] : null,
       orderBy: 'createdAt DESC',
     );
@@ -325,7 +398,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: 'email = ?',
+      where: 'email =?',
       whereArgs: [email],
       limit: 1,
     );
@@ -337,7 +410,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: 'uid = ?',
+      where: 'uid =?',
       whereArgs: [uid],
       limit: 1,
     );
@@ -347,8 +420,8 @@ class DBHelper {
 
   /// Updates an existing user and returns the number of rows affected.
   Future<int> updateUser(AppUser user) async {
-    if (user.email.trim().isEmpty) {
-      throw ArgumentError('Cannot update a user without an email.');
+    if (user.uid == null || user.uid!.trim().isEmpty) {
+      throw ArgumentError('Cannot update a user without a uid.');
     }
 
     final db = await database;
@@ -358,21 +431,21 @@ class DBHelper {
     final updated = await db.update(
       'users',
       map,
-      where: 'email = ?',
-      whereArgs: [user.email],
+      where: 'uid =?',
+      whereArgs: [user.uid],
     );
     return updated;
   }
 
   Future<int> deleteUser(String email) async {
     final db = await database;
-    return db.delete('users', where: 'email = ?', whereArgs: [email]);
+    return db.delete('users', where: 'email =?', whereArgs: [email]);
   }
 
   Future<int> getUserCountByRole(String role) async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM users WHERE role = ?',
+      'SELECT COUNT(*) as count FROM users WHERE role =?',
       [role],
     );
     return int.tryParse(result.first['count'].toString()) ?? 0;
@@ -419,11 +492,19 @@ class DBHelper {
           await db.rawQuery('SELECT COUNT(*) FROM sites WHERE isSynced = 0'),
         ) ??
         0;
+    final pendingImageSync =
+        Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM sites WHERE image_synced = 0 AND image_paths IS NOT NULL',
+          ),
+        ) ??
+        0;
 
     return {
       'totalSites': totalSites,
       'gpsCaptured': gpsCaptured,
       'pendingSync': pendingSync,
+      'pendingImageSync': pendingImageSync,
     };
   }
 
@@ -458,7 +539,7 @@ class DBHelper {
     final today =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfToday.toIso8601String()],
           ),
         ) ??
@@ -466,7 +547,7 @@ class DBHelper {
     final week =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfWeek.toIso8601String()],
           ),
         ) ??
@@ -642,6 +723,7 @@ class DBHelper {
             notes: map['notes']?.toString().trim(),
             imagePath: map['image_path']?.toString().trim(),
             imagePaths: imagePaths,
+            imageSynced: false,
             registeredAt:
                 DateTime.tryParse(map['registered_at']?.toString() ?? '') ??
                 DateTime.now(),
@@ -717,6 +799,7 @@ class DBHelper {
     'notes',
     'image_path',
     'image_paths',
+    'image_cloudinary_urls',
     'income_bracket',
     'employed_count',
     'unemployed_count',
@@ -769,6 +852,11 @@ class DBHelper {
         TextCellValue(s.notes ?? ''),
         TextCellValue(s.imagePath ?? ''),
         TextCellValue(s.imagePaths != null ? jsonEncode(s.imagePaths) : ''),
+        TextCellValue(
+          s.imageCloudinaryUrls != null
+              ? jsonEncode(s.imageCloudinaryUrls)
+              : '',
+        ),
         TextCellValue(s.incomeBracket ?? ''),
         TextCellValue(s.employedCount?.toString() ?? ''),
         TextCellValue(s.unemployedCount?.toString() ?? ''),
@@ -834,6 +922,7 @@ class DBHelper {
         s.notes,
         s.imagePath,
         s.imagePaths != null ? jsonEncode(s.imagePaths) : '',
+        s.imageCloudinaryUrls != null ? jsonEncode(s.imageCloudinaryUrls) : '',
         s.incomeBracket,
         s.employedCount,
         s.unemployedCount,

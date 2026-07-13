@@ -32,13 +32,15 @@ extension SiteTypeX on SiteType {
 class Site {
   final int? id;
   final String? firestoreId; // Firebase doc ID
-  final bool isSynced; // Sync status flag
+  final bool isSynced; // Sync status flag for entire doc
   final String name;
   final String village;
   final SiteType type;
   final DateTime registeredAt;
-  final String? imagePath; // First/primary image
-  final List<String>? imagePaths; // All photos
+  final String? imagePath; // First/primary local image
+  final List<String>? imagePaths; // All local photos
+  final List<String>? imageCloudinaryUrls; // Cloudinary URLs after upload
+  final bool imageSynced; // true = all images uploaded to Cloudinary
   final double? latitude;
   final double? longitude;
   final double? accuracy; // GPS accuracy in meters
@@ -69,19 +71,19 @@ class Site {
   final String directions;
   final double? distanceFromLandmark;
 
-  // NEW: Income & Employment
+  // Income & Employment
   final String? incomeBracket;
   final int? employedCount;
   final int? unemployedCount;
   final int? grantRecipients;
 
-  // NEW: Road & Landmark Access
+  // Road & Landmark Access
   final Map<String, dynamic>?
   roadAccess; // {roadType, condition, yearRoundAccess, distanceToTar}
   final List<Map<String, dynamic>>?
   landmarkAccesses; // [{name, lat, lng, distanceKm, travelMinutes, mode}]
 
-  // NEW: Creator tracking for flat /sites collection
+  // Creator tracking for flat /sites collection
   final String? createdBy; // Email of creator
   final String? createdByUid; // Firebase UID of creator
   final String? createdByName; // Display name of creator
@@ -104,6 +106,8 @@ class Site {
     required this.registeredAt,
     this.imagePath,
     this.imagePaths,
+    this.imageCloudinaryUrls,
+    this.imageSynced = false,
     this.latitude,
     this.longitude,
     this.accuracy,
@@ -147,6 +151,8 @@ class Site {
     DateTime? registeredAt,
     String? imagePath,
     List<String>? imagePaths,
+    List<String>? imageCloudinaryUrls,
+    bool? imageSynced,
     double? latitude,
     double? longitude,
     double? accuracy,
@@ -203,6 +209,8 @@ class Site {
       registeredAt: registeredAt ?? this.registeredAt,
       imagePath: imagePath ?? this.imagePath,
       imagePaths: imagePaths ?? this.imagePaths,
+      imageCloudinaryUrls: imageCloudinaryUrls ?? this.imageCloudinaryUrls,
+      imageSynced: imageSynced ?? this.imageSynced,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       accuracy: accuracy ?? this.accuracy,
@@ -248,6 +256,10 @@ class Site {
       'registered_at': registeredAt.toIso8601String(),
       'image_path': imagePath,
       'image_paths': imagePaths != null ? jsonEncode(imagePaths) : null,
+      'image_cloudinary_urls': imageCloudinaryUrls != null
+          ? jsonEncode(imageCloudinaryUrls)
+          : null,
+      'image_synced': imageSynced ? 1 : 0,
       'latitude': latitude,
       'longitude': longitude,
       'accuracy': accuracy,
@@ -325,8 +337,11 @@ class Site {
       'phoneNumber': phoneNumber,
       'services': services,
       'notes': notes,
-      'imagePath': imagePath,
-      'imagePaths': imagePaths,
+      'imagePath':
+          imagePath, // Keep for backward compat, but prefer imageCloudinaryUrls
+      'imagePaths': imagePaths, // Keep for backward compat
+      'imageCloudinaryUrls': imageCloudinaryUrls,
+      'imageSynced': imageSynced,
       'incomeBracket': incomeBracket,
       'employedCount': employedCount,
       'unemployedCount': unemployedCount,
@@ -482,6 +497,8 @@ class Site {
       registeredAt: _toDateTime(map['registered_at']),
       imagePath: _toString(map['image_path']),
       imagePaths: _toStringList(map['image_paths']),
+      imageCloudinaryUrls: _toStringList(map['image_cloudinary_urls']),
+      imageSynced: (_toInt(map['image_synced']) ?? 0) == 1,
       latitude: _toDouble(map['latitude']),
       longitude: _toDouble(map['longitude']),
       accuracy: _toDouble(map['accuracy']),
@@ -542,6 +559,10 @@ class Site {
       imagePaths: (data['imagePaths'] as List?)
           ?.map((e) => e.toString())
           .toList(),
+      imageCloudinaryUrls: (data['imageCloudinaryUrls'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
+      imageSynced: data['imageSynced'] ?? false,
       latitude: _toDouble(data['latitude']),
       longitude: _toDouble(data['longitude']),
       accuracy: _toDouble(data['accuracy']),
