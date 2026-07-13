@@ -88,11 +88,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       if (url == null) throw 'Upload failed';
 
-      final error = await auth.updateProfile(
-        photoUrl: url,
-        name: _nameController.text.trim(),
-        phone: _phoneController.text.trim(),
-      );
+      final error = await auth.updateProfile(photoUrl: url);
 
       if (error == null) {
         setState(() {
@@ -142,11 +138,18 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 onTap: () async {
                   Navigator.pop(context);
                   final auth = context.read<AuthProvider>();
-                  await auth.updateProfile(photoUrl: '', name: '', phone: '');
-                  setState(() {
-                    _currentPhotoUrl = null;
-                    _profileImage = null;
-                  });
+                  setState(() => _uploadingPhoto = true);
+                  final error = await auth.updateProfile(photoUrl: '');
+                  setState(() => _uploadingPhoto = false);
+                  if (error == null) {
+                    setState(() {
+                      _currentPhotoUrl = null;
+                      _profileImage = null;
+                    });
+                    _showSnack('Photo removed');
+                  } else {
+                    _showSnack(error);
+                  }
                 },
               ),
           ],
@@ -167,7 +170,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final error = await auth.updateProfile(
       name: _nameController.text.trim(),
       phone: _phoneController.text.trim(),
-      photoUrl: '$_currentPhotoUrl',
     );
 
     if (!mounted) return;

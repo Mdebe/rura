@@ -171,8 +171,6 @@ class AuthProvider with ChangeNotifier {
           return 'Offline login only available for last user. Connect to internet.';
         }
 
-        // We can't verify password offline with Firebase, so we trust device
-        // For production, hash password locally on first login and verify here
         _currentUser = cached;
         notifyListeners();
         return null;
@@ -273,24 +271,32 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<String?> updateProfile({
-    required String name,
-    required String phone,
-    required String photoUrl,
+    String? name,
+    String? phone,
+    String? photoUrl,
   }) async {
     if (_currentUser == null || _firebaseUser == null) return 'Not logged in';
     try {
-      await _firebaseUser!.updateDisplayName(name.trim());
+      if (name != null) await _firebaseUser!.updateDisplayName(name.trim());
+      if (photoUrl != null) await _firebaseUser!.updatePhotoURL(photoUrl);
+
       final updated = _currentUser!.copyWith(
-        name: name.trim(),
-        phone: phone.trim(),
+        name: name?.trim(),
+        phone: phone?.trim(),
+        photoUrl: photoUrl,
       );
 
-      await _firestore.collection('users').doc(_firebaseUser!.uid).update({
-        'name': name.trim(),
-        'phone': phone.trim(),
-      });
+      final updates = <String, dynamic>{};
+      if (name != null) updates['name'] = name.trim();
+      if (phone != null) updates['phone'] = phone.trim();
+      if (photoUrl != null) updates['photoUrl'] = photoUrl;
 
+      await _firestore
+          .collection('users')
+          .doc(_firebaseUser!.uid)
+          .update(updates);
       await DBHelper.instance.updateUser(updated);
+
       _currentUser = updated;
       notifyListeners();
       return null;
