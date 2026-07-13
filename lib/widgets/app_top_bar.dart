@@ -183,35 +183,6 @@ class GeoRuraAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     items.addAll([
       const PopupMenuItem(
-        value: 'help',
-        child: ListTile(
-          leading: Icon(Icons.help_outline),
-          title: Text('Help & Support'),
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-        ),
-      ),
-      const PopupMenuDivider(),
-      const PopupMenuItem(
-        value: 'terms',
-        child: ListTile(
-          leading: Icon(Icons.description_outlined),
-          title: Text('Terms & Conditions'),
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-        ),
-      ),
-      const PopupMenuItem(
-        value: 'privacy',
-        child: ListTile(
-          leading: Icon(Icons.privacy_tip_outlined),
-          title: Text('Privacy Policy'),
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-        ),
-      ),
-      const PopupMenuDivider(),
-      const PopupMenuItem(
         value: 'about',
         child: ListTile(
           leading: Icon(Icons.info_outline),

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // ADD THIS
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart'; // ADD THIS
 import 'package:ruralmap/screens/household_details_screen.dart';
 
 import '../database/db_helper.dart';
@@ -56,25 +57,19 @@ class _MapScreenState extends State<MapScreen> {
     try {
       await _loadLocation();
 
-      // Load from both sources
       final results = await Future.wait([
-        DBHelper.instance.getAllSites(), // Local SQLite
-        _loadFirebaseSites(), // Firebase /sites
+        DBHelper.instance.getAllSites(),
+        _loadFirebaseSites(),
       ]);
 
       _localSites = results[0] as List<Site>;
       _firebaseSites = results[1] as List<Site>;
 
-      // Merge: Firebase takes priority, add local sites not in Firebase
       final Map<String, Site> mergedMap = {};
-
-      // Add Firebase sites first
       for (final site in _firebaseSites) {
         final key = site.firestoreId ?? site.siteCode;
         if (key.isNotEmpty) mergedMap[key] = site;
       }
-
-      // Add local sites not already in Firebase
       for (final site in _localSites) {
         final key = site.firestoreId ?? site.siteCode;
         if (key.isNotEmpty && !mergedMap.containsKey(key)) {
@@ -98,7 +93,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // FIX: Load sites from Firebase /sites collection
   Future<List<Site>> _loadFirebaseSites() async {
     try {
       final snapshot = await _firestore
@@ -106,20 +100,27 @@ class _MapScreenState extends State<MapScreen> {
           .orderBy('registeredAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+      return snapshot.docs
+          .map((doc) {
+            try {
+              return Site.fromFirestore(doc);
+            } catch (e) {
+              debugPrint('Failed to parse site ${doc.id}: $e');
+              return null;
+            }
+          })
+          .whereType<Site>()
+          .toList();
     } catch (e) {
       debugPrint('Firebase sites load failed: $e');
-      return []; // Return empty on error, local sites will still show
+      return [];
     }
   }
 
   Future<void> _loadLocation() async {
     try {
       bool enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) {
-        debugPrint('Location services disabled.');
-        return;
-      }
+      if (!enabled) return;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -128,7 +129,6 @@ class _MapScreenState extends State<MapScreen> {
 
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        debugPrint('Location permission denied.');
         return;
       }
 
@@ -142,6 +142,42 @@ class _MapScreenState extends State<MapScreen> {
       _accuracy = pos.accuracy;
     } catch (error, stack) {
       debugPrint('MapScreen location load failed: $error\n$stack');
+    }
+  }
+
+  // FIX: Directions method
+  Future<void> _launchDirections(Site site) async {
+    if (site.latitude == null || site.longitude == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No coordinates for this site')),
+        );
+      }
+      return;
+    }
+
+    // Try Google Maps first, fallback to OSM web
+    final googleUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}',
+    );
+    final osmUri = Uri.parse(
+      'https://www.openstreetmap.org/directions?to=${site.latitude}%2C${site.longitude}',
+    );
+
+    try {
+      if (await canLaunchUrl(googleUri)) {
+        await launchUrl(googleUri, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(osmUri)) {
+        await launchUrl(osmUri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Could not launch maps';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not open Maps')));
+      }
     }
   }
 
@@ -179,14 +215,46 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showSite(Site site) {
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surface, // FIX: Explicit bg
+      backgroundColor: colorScheme.surface,
       builder: (_) {
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -204,10 +272,7 @@ class _MapScreenState extends State<MapScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              Text(
-                '${site.village}, ${site.ward}',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
+              Text(site.village, style: TextStyle(color: Colors.grey.shade600)),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -227,58 +292,77 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              _buildDetailRow(Icons.badge, 'Site Code', site.siteCode),
+              const SizedBox(height: 8),
+              if (site.directions.isNotEmpty)
+                _buildDetailRow(Icons.route, 'Directions', site.directions),
+              if (site.directions.isNotEmpty) const SizedBox(height: 8),
+              _buildDetailRow(
+                Icons.person,
+                'Created By',
+                site.createdByName?.isEmpty ?? true
+                    ? 'Unknown'
+                    : site.createdByName!,
+              ),
+              const SizedBox(height: 8),
+              _buildDetailRow(
+                Icons.calendar_today,
+                'Registered',
+                site.registeredAt.toLocal().toString().split(' ')[0],
+              ),
               if (site.householdHead != null) ...[
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.person, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      site.householdHead!,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ],
+                _buildDetailRow(
+                  Icons.home,
+                  'Household Head',
+                  site.householdHead!,
                 ),
               ],
               if (site.phoneNumber != null) ...[
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.phone, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      site.phoneNumber!,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ],
-                ),
+                const SizedBox(height: 8),
+                _buildDetailRow(Icons.phone, 'Phone', site.phoneNumber!),
               ],
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context); // Close bottom sheet
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => HouseholdDetailsScreen(
-                          site: site,
-                          onEdit: () {
-                            Navigator.pop(context); // Close details
-                          },
-                        ),
+              const SizedBox(height: 24),
+              // FIX: Added Directions button + View Details
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _launchDirections(site),
+                      icon: const Icon(Icons.directions),
+                      label: const Text('Directions'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.visibility),
-                  label: const Text("View Full Details"),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => HouseholdDetailsScreen(
+                              site: site,
+                              onEdit: () {
+                                Navigator.pop(context);
+                                _load(); // Refresh after edit
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.visibility),
+                      label: const Text('Details'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
             ],
@@ -290,16 +374,18 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (_loading) {
       return Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
+        backgroundColor: colorScheme.surface,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_errorMessage != null) {
       return Scaffold(
-        backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
+        backgroundColor: colorScheme.surface,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -327,7 +413,7 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface, // FIX: Add bg
+      backgroundColor: colorScheme.surface,
       body: Stack(
         children: [
           FlutterMap(
@@ -398,9 +484,7 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () async {
               await _loadLocation();
               _mapController.move(_currentLocation, 18);
-              if (mounted) {
-                setState(() {});
-              }
+              if (mounted) setState(() {});
             },
             child: const Icon(Icons.my_location),
           ),

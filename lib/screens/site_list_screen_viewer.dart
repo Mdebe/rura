@@ -1,7 +1,7 @@
-// site_list_screen_viewer.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 import '../models/site.dart';
 
 class SiteListScreen extends StatefulWidget {
@@ -63,28 +63,51 @@ class _SiteListScreenState extends State<SiteListScreen> {
     }).toList();
   }
 
+  // FIXED: Try Google Maps -> OSM Web -> geo: URI -> fallback
   Future<void> _launchDirections(Site site) async {
     if (site.latitude == null || site.longitude == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No coordinates available for this site'),
-          ),
-        );
-      }
+      _showSnack('No coordinates available for this site');
       return;
     }
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}',
+
+    final lat = site.latitude!;
+    final lng = site.longitude!;
+
+    // 1. Google Maps web/app
+    final googleUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
     );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not open Maps')));
+
+    // 2. OpenStreetMap web directions
+    final osmUri = Uri.parse(
+      'https://www.openstreetmap.org/directions?to=$lat%2C$lng',
+    );
+
+    // 3. geo: URI - opens default maps app on Android
+    final geoUri = Uri.parse(
+      'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(site.name)})',
+    );
+
+    try {
+      if (await canLaunchUrl(googleUri)) {
+        await launchUrl(googleUri, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(osmUri)) {
+        await launchUrl(osmUri, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(geoUri)) {
+        await launchUrl(geoUri);
+      } else {
+        throw 'No maps app found';
       }
+    } catch (e) {
+      debugPrint('Directions launch failed: $e');
+      _showSnack('Could not open Maps. Coordinates copied to clipboard.');
+      await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -94,9 +117,9 @@ class _SiteListScreenState extends State<SiteListScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.65,
+        initialChildSize: 0.7,
         minChildSize: 0.4,
-        maxChildSize: 0.9,
+        maxChildSize: 0.95,
         builder: (_, controller) => Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
@@ -151,10 +174,21 @@ class _SiteListScreenState extends State<SiteListScreen> {
               ),
               if (site.latitude != null && site.longitude != null) ...[
                 const SizedBox(height: 16),
-                _buildDetailRow(
-                  Icons.gps_fixed,
-                  'Coordinates',
-                  '${site.latitude!.toStringAsFixed(6)}, ${site.longitude!.toStringAsFixed(6)}',
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(
+                      ClipboardData(
+                        text: '${site.latitude}, ${site.longitude}',
+                      ),
+                    );
+                    _showSnack('Coordinates copied');
+                  },
+                  child: _buildDetailRow(
+                    Icons.gps_fixed,
+                    'Coordinates',
+                    '${site.latitude!.toStringAsFixed(6)}, ${site.longitude!.toStringAsFixed(6)}',
+                    showCopy: true,
+                  ),
                 ),
               ],
               const SizedBox(height: 32),
@@ -184,7 +218,12 @@ class _SiteListScreenState extends State<SiteListScreen> {
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
+  Widget _buildDetailRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool showCopy = false,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,12 +243,20 @@ class _SiteListScreenState extends State<SiteListScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (showCopy)
+                    const Icon(Icons.copy, size: 14, color: Colors.grey),
+                ],
               ),
             ],
           ),
@@ -226,7 +273,10 @@ class _SiteListScreenState extends State<SiteListScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: const Text('Sort by'),
+              title: const Text(
+                'Sort by',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               trailing: IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.pop(context),
@@ -299,7 +349,6 @@ class _SiteListScreenState extends State<SiteListScreen> {
           ),
         ],
       ),
-      // No FloatingActionButton - viewers are read-only
       body: Column(
         children: [
           Padding(
