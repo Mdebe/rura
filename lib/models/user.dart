@@ -6,6 +6,7 @@ class AppUser {
   final String email;
   final String phone;
   final String role;
+  final String? photoUrl; // ADD THIS
   final DateTime createdAt;
   final DateTime? lastLogin;
 
@@ -15,6 +16,7 @@ class AppUser {
     required this.email,
     required this.phone,
     required this.role,
+    this.photoUrl, // ADD THIS
     required this.createdAt,
     this.lastLogin,
   });
@@ -25,6 +27,7 @@ class AppUser {
     String? email,
     String? phone,
     String? role,
+    String? photoUrl, // ADD THIS
     DateTime? createdAt,
     DateTime? lastLogin,
   }) {
@@ -34,6 +37,7 @@ class AppUser {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       role: role ?? this.role,
+      photoUrl: photoUrl ?? this.photoUrl, // ADD THIS
       createdAt: createdAt ?? this.createdAt,
       lastLogin: lastLogin ?? this.lastLogin,
     );
@@ -48,6 +52,7 @@ class AppUser {
       'email': email,
       'phone': phone,
       'role': role,
+      'photoUrl': photoUrl, // ADD THIS
       'createdAt': Timestamp.fromDate(createdAt), // FIX: Send as Timestamp
       'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
     };
@@ -61,6 +66,7 @@ class AppUser {
       'email': email,
       'phone': phone,
       'role': role,
+      'photoUrl': photoUrl, // ADD THIS
       'createdAt': createdAt.toIso8601String(),
       'lastLogin': lastLogin?.toIso8601String(),
     };
@@ -93,6 +99,7 @@ class AppUser {
       email: _toString(map['email']),
       phone: _toString(map['phone']),
       role: _toString(map['role'], fallback: 'Enumerator'),
+      photoUrl: _toString(map['photoUrl']), // ADD THIS
       createdAt: _toDateTime(map['createdAt']),
       lastLogin: map['lastLogin'] != null
           ? _toDateTime(map['lastLogin'], fallback: null)

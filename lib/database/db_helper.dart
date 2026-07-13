@@ -28,7 +28,7 @@ class DBHelper {
   static const String _dbFileName = 'georura.db';
   static const String _backupFolderName = 'db_backups';
   static const String _exportFolderName = 'db_exports';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3; // BUMPED FOR image_url
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
@@ -77,6 +77,7 @@ class DBHelper {
         type TEXT NOT NULL,
         registered_at TEXT NOT NULL,
         image_path TEXT,
+        image_url TEXT,
         image_paths TEXT,
         latitude REAL,
         longitude REAL,
@@ -143,13 +144,13 @@ class DBHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // users table originally had no `uid` column, but AppUser.toSqliteMap()
-      // always includes one — add it so inserts/updates don't fail on
-      // existing installs.
       await db.execute('ALTER TABLE users ADD COLUMN uid TEXT');
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_users_uid ON users(uid)',
       );
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE sites ADD COLUMN image_url TEXT');
     }
   }
 
@@ -157,8 +158,6 @@ class DBHelper {
   // SITE CRUD - LOCAL FIRST
   // ---------------------------------------------------------------------------
 
-  /// Registers a new site locally. New sites always start unsynced with no
-  /// Firestore id — they get assigned one once pushed to the backend.
   Future<int> insertSite(Site site) async {
     final db = await database;
     final map = site.toMap();
@@ -173,9 +172,6 @@ class DBHelper {
     );
   }
 
-  /// Updates an existing site and returns the number of rows affected.
-  /// Always stamps `last_updated`, and marks the record unsynced whenever it
-  /// already has a Firestore id (i.e. it was edited after a previous sync).
   Future<int> updateSite(Site site) async {
     if (site.id == null) {
       throw ArgumentError('Cannot update a site without an id.');
@@ -185,13 +181,13 @@ class DBHelper {
     final map = site.toMap();
     map['last_updated'] = DateTime.now().toIso8601String();
     if (site.firestoreId != null) {
-      map['isSynced'] = 0; // Mark for re-sync if edited
+      map['isSynced'] = 0;
     }
 
     final updated = await db.update(
       'sites',
       map,
-      where: 'id = ?',
+      where: 'id =?',
       whereArgs: [site.id],
     );
     return updated;
@@ -199,7 +195,7 @@ class DBHelper {
 
   Future<int> deleteSite(int id) async {
     final db = await database;
-    return db.delete('sites', where: 'id = ?', whereArgs: [id]);
+    return db.delete('sites', where: 'id =?', whereArgs: [id]);
   }
 
   Future<int> deleteAllSites() async {
@@ -221,7 +217,7 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'id = ?',
+      where: 'id =?',
       whereArgs: [id],
       limit: 1,
     );
@@ -233,7 +229,7 @@ class DBHelper {
     final db = await database;
     final rows = await db.query(
       'sites',
-      where: 'name LIKE ? OR village LIKE ? OR household_head LIKE ?',
+      where: 'name LIKE? OR village LIKE? OR household_head LIKE?',
       whereArgs: ['%$query%', '%$query%', '%$query%'],
       orderBy: 'registered_at DESC',
     );
@@ -246,12 +242,7 @@ class DBHelper {
 
   Future<int> markSiteUnsynced(int id) async {
     final db = await database;
-    return db.update(
-      'sites',
-      {'isSynced': 0},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return db.update('sites', {'isSynced': 0}, where: 'id =?', whereArgs: [id]);
   }
 
   Future<List<Site>> getUnsyncedSites() async {
@@ -273,7 +264,7 @@ class DBHelper {
         'firestore_id': firestoreId,
         'last_updated': DateTime.now().toIso8601String(),
       },
-      where: 'id = ?',
+      where: 'id =?',
       whereArgs: [id],
     );
   }
@@ -290,7 +281,6 @@ class DBHelper {
   // USER CRUD
   // ---------------------------------------------------------------------------
 
-  /// Registers a new user locally.
   Future<int> insertUser(AppUser user) async {
     if (user.email.trim().isEmpty) {
       throw ArgumentError('Cannot register a user without an email.');
@@ -298,7 +288,7 @@ class DBHelper {
 
     final db = await database;
     final map = user.toSqliteMap();
-    map.remove('id'); // local id is autoincrement, never set explicitly
+    map.remove('id');
     map['createdAt'] = (map['createdAt'] as String?)?.isNotEmpty == true
         ? map['createdAt']
         : DateTime.now().toIso8601String();
@@ -314,7 +304,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: filterRole != null ? 'role = ?' : null,
+      where: filterRole != null ? 'role =?' : null,
       whereArgs: filterRole != null ? [filterRole] : null,
       orderBy: 'createdAt DESC',
     );
@@ -325,7 +315,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: 'email = ?',
+      where: 'email =?',
       whereArgs: [email],
       limit: 1,
     );
@@ -337,7 +327,7 @@ class DBHelper {
     final db = await database;
     final maps = await db.query(
       'users',
-      where: 'uid = ?',
+      where: 'uid =?',
       whereArgs: [uid],
       limit: 1,
     );
@@ -345,7 +335,6 @@ class DBHelper {
     return AppUser.fromMap(maps.first);
   }
 
-  /// Updates an existing user and returns the number of rows affected.
   Future<int> updateUser(AppUser user) async {
     if (user.email.trim().isEmpty) {
       throw ArgumentError('Cannot update a user without an email.');
@@ -358,7 +347,7 @@ class DBHelper {
     final updated = await db.update(
       'users',
       map,
-      where: 'email = ?',
+      where: 'email =?',
       whereArgs: [user.email],
     );
     return updated;
@@ -366,13 +355,13 @@ class DBHelper {
 
   Future<int> deleteUser(String email) async {
     final db = await database;
-    return db.delete('users', where: 'email = ?', whereArgs: [email]);
+    return db.delete('users', where: 'email =?', whereArgs: [email]);
   }
 
   Future<int> getUserCountByRole(String role) async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM users WHERE role = ?',
+      'SELECT COUNT(*) as count FROM users WHERE role =?',
       [role],
     );
     return int.tryParse(result.first['count'].toString()) ?? 0;
@@ -458,7 +447,7 @@ class DBHelper {
     final today =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfToday.toIso8601String()],
           ),
         ) ??
@@ -466,7 +455,7 @@ class DBHelper {
     final week =
         Sqflite.firstIntValue(
           await db.rawQuery(
-            'SELECT COUNT(*) FROM sites WHERE registered_at >= ?',
+            'SELECT COUNT(*) FROM sites WHERE registered_at >=?',
             [startOfWeek.toIso8601String()],
           ),
         ) ??
@@ -641,6 +630,7 @@ class DBHelper {
             services: services,
             notes: map['notes']?.toString().trim(),
             imagePath: map['image_path']?.toString().trim(),
+            imageUrl: map['image_url']?.toString().trim(),
             imagePaths: imagePaths,
             registeredAt:
                 DateTime.tryParse(map['registered_at']?.toString() ?? '') ??
@@ -716,6 +706,7 @@ class DBHelper {
     'services',
     'notes',
     'image_path',
+    'image_url',
     'image_paths',
     'income_bracket',
     'employed_count',
@@ -768,6 +759,7 @@ class DBHelper {
         TextCellValue(s.services != null ? jsonEncode(s.services) : ''),
         TextCellValue(s.notes ?? ''),
         TextCellValue(s.imagePath ?? ''),
+        TextCellValue(s.imageUrl ?? ''),
         TextCellValue(s.imagePaths != null ? jsonEncode(s.imagePaths) : ''),
         TextCellValue(s.incomeBracket ?? ''),
         TextCellValue(s.employedCount?.toString() ?? ''),
@@ -833,6 +825,7 @@ class DBHelper {
         s.services != null ? jsonEncode(s.services) : '',
         s.notes,
         s.imagePath,
+        s.imageUrl,
         s.imagePaths != null ? jsonEncode(s.imagePaths) : '',
         s.incomeBracket,
         s.employedCount,

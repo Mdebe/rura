@@ -275,6 +275,7 @@ class AuthProvider with ChangeNotifier {
   Future<String?> updateProfile({
     required String name,
     required String phone,
+    required String photoUrl,
   }) async {
     if (_currentUser == null || _firebaseUser == null) return 'Not logged in';
     try {

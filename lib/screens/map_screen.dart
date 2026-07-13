@@ -63,7 +63,9 @@ class _MapScreenState extends State<MapScreen> {
         _loadFirebaseSites(),
       ]);
 
+      // ignore: unnecessary_cast
       _localSites = results[0] as List<Site>;
+      // ignore: unnecessary_cast
       _firebaseSites = results[1] as List<Site>;
 
       final Map<String, Site> mergedMap = {};

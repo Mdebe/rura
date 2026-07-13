@@ -37,8 +37,9 @@ class Site {
   final String village;
   final SiteType type;
   final DateTime registeredAt;
-  final String? imagePath; // First/primary image
-  final List<String>? imagePaths; // All photos
+  final String? imagePath; // Local file path
+  final List<String>? imagePaths; // All local photos
+  final String? imageUrl; // Cloudinary URL
   final double? latitude;
   final double? longitude;
   final double? accuracy; // GPS accuracy in meters
@@ -69,19 +70,19 @@ class Site {
   final String directions;
   final double? distanceFromLandmark;
 
-  // NEW: Income & Employment
+  // Income & Employment
   final String? incomeBracket;
   final int? employedCount;
   final int? unemployedCount;
   final int? grantRecipients;
 
-  // NEW: Road & Landmark Access
+  // Road & Landmark Access
   final Map<String, dynamic>?
   roadAccess; // {roadType, condition, yearRoundAccess, distanceToTar}
   final List<Map<String, dynamic>>?
   landmarkAccesses; // [{name, lat, lng, distanceKm, travelMinutes, mode}]
 
-  // NEW: Creator tracking for flat /sites collection
+  // Creator tracking for flat /sites collection
   final String? createdBy; // Email of creator
   final String? createdByUid; // Firebase UID of creator
   final String? createdByName; // Display name of creator
@@ -104,6 +105,7 @@ class Site {
     required this.registeredAt,
     this.imagePath,
     this.imagePaths,
+    this.imageUrl,
     this.latitude,
     this.longitude,
     this.accuracy,
@@ -147,6 +149,7 @@ class Site {
     DateTime? registeredAt,
     String? imagePath,
     List<String>? imagePaths,
+    String? imageUrl,
     double? latitude,
     double? longitude,
     double? accuracy,
@@ -203,6 +206,7 @@ class Site {
       registeredAt: registeredAt ?? this.registeredAt,
       imagePath: imagePath ?? this.imagePath,
       imagePaths: imagePaths ?? this.imagePaths,
+      imageUrl: imageUrl ?? this.imageUrl,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       accuracy: accuracy ?? this.accuracy,
@@ -247,6 +251,7 @@ class Site {
       'type': type.name,
       'registered_at': registeredAt.toIso8601String(),
       'image_path': imagePath,
+      'image_url': imageUrl,
       'image_paths': imagePaths != null ? jsonEncode(imagePaths) : null,
       'latitude': latitude,
       'longitude': longitude,
@@ -326,6 +331,7 @@ class Site {
       'services': services,
       'notes': notes,
       'imagePath': imagePath,
+      'imageUrl': imageUrl,
       'imagePaths': imagePaths,
       'incomeBracket': incomeBracket,
       'employedCount': employedCount,
@@ -481,6 +487,7 @@ class Site {
       type: _toSiteType(map['type']),
       registeredAt: _toDateTime(map['registered_at']),
       imagePath: _toString(map['image_path']),
+      imageUrl: _toString(map['image_url']),
       imagePaths: _toStringList(map['image_paths']),
       latitude: _toDouble(map['latitude']),
       longitude: _toDouble(map['longitude']),
@@ -539,6 +546,7 @@ class Site {
       type: _toSiteType(data['type']),
       registeredAt: (data['registeredAt'] as Timestamp).toDate(),
       imagePath: data['imagePath'],
+      imageUrl: data['imageUrl'],
       imagePaths: (data['imagePaths'] as List?)
           ?.map((e) => e.toString())
           .toList(),
